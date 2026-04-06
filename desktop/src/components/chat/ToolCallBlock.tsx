@@ -8,6 +8,7 @@ type Props = {
   toolName: string
   input: unknown
   result?: { content: unknown; isError: boolean } | null
+  compact?: boolean
 }
 
 const TOOL_ICONS: Record<string, string> = {
@@ -24,33 +25,22 @@ const TOOL_ICONS: Record<string, string> = {
   Skill: 'auto_awesome',
 }
 
-const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  Edit: { label: 'MODIFIED', className: 'bg-[var(--color-primary-fixed)] text-[#75331C]' },
-  Write: { label: 'CREATED', className: 'bg-[#D4EAB4] text-[#3B4C24]' },
-  Read: { label: 'READ', className: 'bg-[var(--color-surface-container-high)] text-[var(--color-outline)]' },
-  Bash: { label: 'EXECUTED', className: 'bg-[var(--color-surface-container-high)] text-[var(--color-outline)]' },
-}
-
-export function ToolCallBlock({ toolName, input, result }: Props) {
+export function ToolCallBlock({ toolName, input, result, compact = false }: Props) {
   const [expanded, setExpanded] = useState(false)
   const obj = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
   const icon = TOOL_ICONS[toolName] || 'build'
   const filePath = typeof obj.file_path === 'string' ? obj.file_path : ''
   const summary = getToolSummary(toolName, obj)
   const outputSummary = getToolResultSummary(toolName, result?.content)
-  const inlineError = getInlineErrorSummary(result)
-  const badge = result
-    ? result.isError
-      ? { label: 'ERROR', className: 'bg-[var(--color-error-container)] text-[var(--color-error)]' }
-      : { label: 'SUCCESS', className: 'bg-[#D4EAB4] text-[#3B4C24]' }
-    : STATUS_BADGE[toolName]
 
   const preview = useMemo(() => renderPreview(toolName, obj, result), [obj, result, toolName])
   const details = useMemo(() => renderDetails(toolName, obj), [obj, toolName])
   const expandable = toolName === 'Edit' || toolName === 'Write'
 
   return (
-    <div className="mb-2 ml-10 overflow-hidden rounded-xl border border-[var(--color-border)]/65 bg-[var(--color-surface-container-lowest)]">
+    <div className={`overflow-hidden rounded-lg border border-[var(--color-border)]/50 bg-[var(--color-surface-container-lowest)] ${
+      compact ? 'mb-0' : 'mb-2 ml-10'
+    }`}>
       <button
         type="button"
         onClick={() => {
@@ -58,50 +48,38 @@ export function ToolCallBlock({ toolName, input, result }: Props) {
             setExpanded((value) => !value)
           }
         }}
-        className="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--color-surface-hover)]/50"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--color-surface-hover)]/50"
       >
-        <div className="flex min-w-0 flex-1 items-start gap-3">
-          <span className="material-symbols-outlined mt-0.5 text-[16px] text-[var(--color-outline)]">{icon}</span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--color-outline)]">
-                {toolName}
-              </span>
-              {badge && (
-                <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] ${badge.className}`}>
-                  {badge.label}
-                </span>
-              )}
-            </div>
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-[11px] leading-[1.35] text-[var(--color-text-tertiary)]">
-              {filePath ? (
-                <span className="max-w-full truncate rounded-md bg-[var(--color-surface-container-low)] px-2 py-1 font-[var(--font-mono)] text-[10px] text-[var(--color-text-secondary)]">
-                  {filePath}
-                </span>
-              ) : null}
-              {summary ? (
-                <span className="min-w-0 truncate font-[var(--font-mono)] text-[10px] text-[var(--color-text-tertiary)]">
-                  {summary}
-                </span>
-              ) : null}
-              {result && outputSummary ? (
-                <span className="min-w-0 truncate text-[10px] text-[var(--color-outline)]">
-                  {outputSummary}
-                </span>
-              ) : null}
-            </div>
-            {inlineError ? (
-              <div className="mt-1 truncate text-[10px] text-[var(--color-error)]">
-                {inlineError}
-              </div>
-            ) : null}
-          </div>
-        </div>
-        {expandable ? (
-          <span className="material-symbols-outlined text-[16px] text-[var(--color-outline)]">
+        <span className="material-symbols-outlined text-[14px] text-[var(--color-outline)]">{icon}</span>
+        <span className="text-[11px] font-semibold text-[var(--color-text-secondary)]">
+          {toolName}
+        </span>
+        {filePath ? (
+          <span className="min-w-0 flex-1 truncate font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
+            {filePath.split('/').pop()}
+          </span>
+        ) : summary ? (
+          <span className="min-w-0 flex-1 truncate font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
+            {summary}
+          </span>
+        ) : (
+          <span className="flex-1" />
+        )}
+        {result && outputSummary && (
+          <span className="shrink-0 text-[10px] text-[var(--color-outline)]">
+            {outputSummary}
+          </span>
+        )}
+        {result?.isError && (
+          <span className="shrink-0 rounded-full bg-[var(--color-error-container)] px-1.5 py-0.5 text-[9px] font-bold text-[var(--color-error)]">
+            ERROR
+          </span>
+        )}
+        {expandable && (
+          <span className="material-symbols-outlined text-[14px] text-[var(--color-outline)]">
             {expanded ? 'expand_less' : 'expand_more'}
           </span>
-        ) : null}
+        )}
       </button>
 
       {expandable && expanded && (
@@ -203,15 +181,6 @@ function getToolResultSummary(toolName: string, content: unknown): string {
   if (!compact) return ''
   if (compact.length <= 36) return compact
   return `${compact.slice(0, 36)}…`
-}
-
-function getInlineErrorSummary(result?: { content: unknown; isError: boolean } | null) {
-  if (!result?.isError) return ''
-
-  const text = extractTextContent(result.content)?.replace(/\s+/g, ' ').trim() || ''
-  if (!text) return 'Tool failed'
-  if (text.length <= 120) return text
-  return `${text.slice(0, 120)}…`
 }
 
 function getToolSummary(toolName: string, obj: Record<string, unknown>): string {
