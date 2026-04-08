@@ -14,6 +14,7 @@ import { ToolInspection } from '../pages/ToolInspection'
 import { AppShell } from '../components/layout/AppShell'
 import { UserMessage } from '../components/chat/UserMessage'
 import { useChatStore } from '../stores/chatStore'
+import { useTabStore } from '../stores/tabStore'
 
 /**
  * Core rendering tests: content-only pages must render without crashing
@@ -44,12 +45,32 @@ describe('Content-only pages render without errors', () => {
   })
 
   it('ActiveSession shows a single primary action button while a turn is active', () => {
-    useChatStore.setState({ chatState: 'thinking' })
+    useTabStore.setState({ activeTabId: 'active-tab', tabs: [{ sessionId: 'active-tab', title: 'Test', status: 'idle' }] })
+    useChatStore.setState({
+      sessions: {
+        'active-tab': {
+          messages: [],
+          chatState: 'thinking',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: null,
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          elapsedTimer: null,
+        },
+      },
+    })
     render(<ActiveSession />)
 
     expect(screen.getByRole('button', { name: /stop/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^run$/i })).not.toBeInTheDocument()
-    useChatStore.setState({ chatState: 'idle' })
+    useChatStore.setState({ sessions: {} })
   })
 
   it('AgentTeams renders team strip and members', () => {

@@ -4,20 +4,12 @@ import { ThinkingBlock } from './ThinkingBlock'
 import { ToolCallBlock } from './ToolCallBlock'
 import { PermissionDialog } from './PermissionDialog'
 import { useChatStore } from '../../stores/chatStore'
+import { useTabStore } from '../../stores/tabStore'
 
 describe('chat blocks', () => {
   beforeEach(() => {
-    useChatStore.setState({
-      chatState: 'idle',
-      messages: [],
-      streamingText: '',
-      streamingToolInput: '',
-      activeToolUseId: null,
-      activeToolName: null,
-      activeThinkingId: null,
-      pendingPermission: null,
-      elapsedSeconds: 0,
-    })
+    useTabStore.setState({ activeTabId: 'active-tab', tabs: [{ sessionId: 'active-tab', title: 'Test', status: 'idle' }] })
+    useChatStore.setState({ sessions: {} })
   })
 
   it('keeps thinking collapsed by default', () => {
@@ -72,13 +64,30 @@ describe('chat blocks', () => {
 
   it('shows a diff preview for edit permission requests', () => {
     useChatStore.setState({
-      pendingPermission: {
-        requestId: 'perm-1',
-        toolName: 'Edit',
-        input: {
-          file_path: '/tmp/example.ts',
-          old_string: 'const count = 1',
-          new_string: 'const count = 2',
+      sessions: {
+        'active-tab': {
+          messages: [],
+          chatState: 'idle',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: {
+            requestId: 'perm-1',
+            toolName: 'Edit',
+            input: {
+              file_path: '/tmp/example.ts',
+              old_string: 'const count = 1',
+              new_string: 'const count = 2',
+            },
+          },
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          elapsedTimer: null,
         },
       },
     })
