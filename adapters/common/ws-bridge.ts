@@ -7,6 +7,18 @@
 
 import WebSocket from 'ws'
 
+/** Attachment reference — mirrors src/server/ws/events.ts AttachmentRef.
+ *  The server will either (a) write base64 `data` to
+ *  ~/.claude/uploads/{sessionId}/ and convert to ImageBlockParam, or
+ *  (b) read `path` from disk and inject `@"path"` into the prompt. */
+export type AttachmentRef = {
+  type: 'file' | 'image'
+  name?: string
+  path?: string
+  data?: string      // base64 payload (images)
+  mimeType?: string
+}
+
 /** Server → Client message (mirrors src/server/ws/events.ts ServerMessage) */
 export type ServerMessage = {
   type: string
@@ -58,8 +70,16 @@ export class WsBridge {
   }
 
   /** Send a user message to the session bound to chatId. */
-  sendUserMessage(chatId: string, content: string): boolean {
-    return this.send(chatId, { type: 'user_message', content })
+  sendUserMessage(
+    chatId: string,
+    content: string,
+    attachments?: AttachmentRef[],
+  ): boolean {
+    const payload: Record<string, unknown> = { type: 'user_message', content }
+    if (attachments && attachments.length > 0) {
+      payload.attachments = attachments
+    }
+    return this.send(chatId, payload)
   }
 
   /** Respond to a permission request.
