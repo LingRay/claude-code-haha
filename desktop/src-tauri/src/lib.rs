@@ -306,9 +306,9 @@ pub fn run() {
             restart_adapters_sidecar
         ])
         .menu(|app| {
-            let about_item = MenuItemBuilder::with_id("nav_about", "About Claude Code Haha")
+            let about_item = MenuItemBuilder::with_id("nav_about", "关于 Claude Code Haha")
                 .build(app)?;
-            let settings_item = MenuItemBuilder::with_id("nav_settings", "Settings...")
+            let settings_item = MenuItemBuilder::with_id("nav_settings", "设置...")
                 .accelerator("CmdOrCtrl+,")
                 .build(app)?;
 
