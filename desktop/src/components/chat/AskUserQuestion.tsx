@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useChatStore } from '../../stores/chatStore'
 import { useTabStore } from '../../stores/tabStore'
 import { useTranslation } from '../../i18n'
@@ -24,6 +24,7 @@ type AskUserInput = {
 type Props = {
   toolUseId: string
   input: unknown
+  result?: unknown
 }
 
 /**
@@ -46,18 +47,40 @@ function parseInput(input: unknown): Question[] {
   return []
 }
 
-export function AskUserQuestion({ toolUseId: _toolUseId, input }: Props) {
-  const { sendMessage } = useChatStore()
+export function AskUserQuestion({ toolUseId, input, result }: Props) {
+  const { respondToPermission } = useChatStore()
   const activeTabId = useTabStore((s) => s.activeTabId)
+  const pendingPermission = useChatStore((s) => activeTabId ? s.sessions[activeTabId]?.pendingPermission : undefined)
   const t = useTranslation()
   const questions = parseInput(input)
+  const inputObject = (input && typeof input === 'object') ? input as Record<string, unknown> : {}
   const [activeTab, setActiveTab] = useState(0)
   const [selections, setSelections] = useState<Record<number, string>>({})
   const [freeText, setFreeText] = useState('')
-  const [submitted, setSubmitted] = useState(false)
+  const [hasSubmitted, setHasSubmitted] = useState(false)
   const composingRef = useRef(false)
 
   if (questions.length === 0) return null
+
+  const resultAnswers = useMemo(() => {
+    if (!result || typeof result !== 'object') return {}
+    const answers = (result as { answers?: unknown }).answers
+    return answers && typeof answers === 'object'
+      ? answers as Record<string, string>
+      : {}
+  }, [result])
+
+  const pendingRequest = pendingPermission?.toolUseId === toolUseId ? pendingPermission : null
+  const answeredText = useMemo(() => {
+    if (Object.keys(resultAnswers).length > 0) {
+      return questions
+        .map((question) => resultAnswers[question.question])
+        .filter((answer): answer is string => typeof answer === 'string' && answer.trim().length > 0)
+        .join(', ')
+    }
+    return freeText.trim() || Object.values(selections).join(', ')
+  }, [freeText, questions, resultAnswers, selections])
+  const submitted = Object.keys(resultAnswers).length > 0 || hasSubmitted
 
   const handleSelect = (qIndex: number, label: string) => {
     if (submitted) return
@@ -84,9 +107,24 @@ export function AskUserQuestion({ toolUseId: _toolUseId, input }: Props) {
     const response = freeText.trim() || parts.join('; ') || ''
     if (!response) return
 
-    setSubmitted(true)
-    if (!activeTabId) return
-    sendMessage(activeTabId, response)
+    if (!activeTabId || !pendingRequest) return
+
+    const answers = questions.reduce<Record<string, string>>((acc, question, index) => {
+      if (freeText.trim()) {
+        acc[question.question] = freeText.trim()
+      } else if (selections[index]) {
+        acc[question.question] = selections[index]!
+      }
+      return acc
+    }, {})
+
+    setHasSubmitted(true)
+    respondToPermission(activeTabId, pendingRequest.requestId, true, {
+      updatedInput: {
+        ...inputObject,
+        answers,
+      },
+    })
   }
 
   // All questions must be answered (via selection or free text) to enable submit
@@ -241,7 +279,7 @@ export function AskUserQuestion({ toolUseId: _toolUseId, input }: Props) {
           <div className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
             <span className="material-symbols-outlined text-[14px] text-[var(--color-success)]">check_circle</span>
             <span>
-              {t('question.answeredPrefix')}<strong>{freeText.trim() || Object.values(selections).join(', ')}</strong>
+              {t('question.answeredPrefix')}<strong>{answeredText}</strong>
             </span>
           </div>
         )}
@@ -253,7 +291,7 @@ export function AskUserQuestion({ toolUseId: _toolUseId, input }: Props) {
           <Button
             variant="primary"
             size="sm"
-            disabled={!allAnswered}
+            disabled={!allAnswered || !pendingRequest}
             onClick={handleSubmit}
             icon={
               <span className="material-symbols-outlined text-[14px]">send</span>

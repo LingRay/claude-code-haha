@@ -6,7 +6,13 @@ import type { PermissionMode } from './settings'
 
 export type ClientMessage =
   | { type: 'user_message'; content: string; attachments?: AttachmentRef[] }
-  | { type: 'permission_response'; requestId: string; allowed: boolean; rule?: string }
+  | {
+      type: 'permission_response'
+      requestId: string
+      allowed: boolean
+      rule?: string
+      updatedInput?: Record<string, unknown>
+    }
   | {
       type: 'computer_use_permission_response'
       requestId: string
@@ -39,7 +45,14 @@ export type ServerMessage =
   | { type: 'content_delta'; text?: string; toolInput?: string }
   | { type: 'tool_use_complete'; toolName: string; toolUseId: string; input: unknown; parentToolUseId?: string }
   | { type: 'tool_result'; toolUseId: string; content: unknown; isError: boolean; parentToolUseId?: string }
-  | { type: 'permission_request'; requestId: string; toolName: string; input: unknown; description?: string }
+  | {
+      type: 'permission_request'
+      requestId: string
+      toolName: string
+      toolUseId?: string
+      input: unknown
+      description?: string
+    }
   | {
       type: 'computer_use_permission_request'
       requestId: string
@@ -147,6 +160,15 @@ export type UIMessage =
   | { id: string; type: 'tool_use'; toolName: string; toolUseId: string; input: unknown; timestamp: number; parentToolUseId?: string }
   | { id: string; type: 'tool_result'; toolUseId: string; content: unknown; isError: boolean; timestamp: number; parentToolUseId?: string }
   | { id: string; type: 'system'; content: string; timestamp: number }
-  | { id: string; type: 'permission_request'; requestId: string; toolName: string; input: unknown; description?: string; timestamp: number }
+  | {
+      id: string
+      type: 'permission_request'
+      requestId: string
+      toolName: string
+      toolUseId?: string
+      input: unknown
+      description?: string
+      timestamp: number
+    }
   | { id: string; type: 'error'; message: string; code: string; timestamp: number }
   | { id: string; type: 'task_summary'; tasks: TaskSummaryItem[]; timestamp: number }

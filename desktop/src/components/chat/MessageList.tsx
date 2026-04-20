@@ -210,6 +210,7 @@ export const MessageBlock = memo(function MessageBlock({
           <AskUserQuestion
             toolUseId={message.toolUseId}
             input={message.input}
+            result={toolResult?.content}
           />
         )
       }

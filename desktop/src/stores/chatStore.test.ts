@@ -223,6 +223,74 @@ describe('chatStore history mapping', () => {
     ])
   })
 
+  it('keeps AskUserQuestion permission requests out of the message list while tracking the pending request', () => {
+    useChatStore.setState({
+      sessions: {
+        [TEST_SESSION_ID]: {
+          messages: [
+            {
+              id: 'ask-1',
+              type: 'tool_use',
+              toolName: 'AskUserQuestion',
+              toolUseId: 'tool-ask-1',
+              input: {
+                questions: [
+                  {
+                    question: 'Should we persist data?',
+                    options: [{ label: 'No' }, { label: 'Yes' }],
+                  },
+                ],
+              },
+              timestamp: 1,
+            },
+          ],
+          chatState: 'idle',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: null,
+          pendingComputerUsePermission: null,
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          agentTaskNotifications: {},
+          elapsedTimer: null,
+        },
+      },
+    })
+
+    useChatStore.getState().handleServerMessage(TEST_SESSION_ID, {
+      type: 'permission_request',
+      requestId: 'perm-ask-1',
+      toolName: 'AskUserQuestion',
+      toolUseId: 'tool-ask-1',
+      input: {
+        questions: [
+          {
+            question: 'Should we persist data?',
+            options: [{ label: 'No' }, { label: 'Yes' }],
+          },
+        ],
+      },
+    })
+
+    const session = useChatStore.getState().sessions[TEST_SESSION_ID]
+    expect(session?.pendingPermission).toMatchObject({
+      requestId: 'perm-ask-1',
+      toolName: 'AskUserQuestion',
+      toolUseId: 'tool-ask-1',
+    })
+    expect(session?.messages).toHaveLength(1)
+    expect(session?.messages[0]).toMatchObject({
+      type: 'tool_use',
+      toolUseId: 'tool-ask-1',
+    })
+  })
+
   it('sends permission mode updates to the active session only', () => {
     useChatStore.getState().setSessionPermissionMode('nonexistent-session', 'acceptEdits')
     expect(sendMock).not.toHaveBeenCalled()

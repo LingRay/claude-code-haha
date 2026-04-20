@@ -302,6 +302,7 @@ function handlePermissionResponse(
     message.requestId,
     message.allowed,
     message.rule,
+    message.updatedInput,
   )
   console.log(`[WS] Permission response for ${message.requestId}: ${message.allowed}`)
 }
@@ -693,6 +694,10 @@ function translateCliMessage(cliMsg: any, sessionId: string): ServerMessage[] {
           type: 'permission_request',
           requestId: cliMsg.request_id,
           toolName: cliMsg.request.tool_name || 'Unknown',
+          toolUseId:
+            typeof cliMsg.request.tool_use_id === 'string'
+              ? cliMsg.request.tool_use_id
+              : undefined,
           input: cliMsg.request.input || {},
           description: cliMsg.request.description,
         }]

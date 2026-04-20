@@ -35,6 +35,7 @@ export type PerSessionState = {
   pendingPermission: {
     requestId: string
     toolName: string
+    toolUseId?: string
     input: unknown
     description?: string
   } | null
@@ -80,7 +81,15 @@ type ChatStore = {
   connectToSession: (sessionId: string) => void
   disconnectSession: (sessionId: string) => void
   sendMessage: (sessionId: string, content: string, attachments?: AttachmentRef[]) => void
-  respondToPermission: (sessionId: string, requestId: string, allowed: boolean, rule?: string) => void
+  respondToPermission: (
+    sessionId: string,
+    requestId: string,
+    allowed: boolean,
+    options?: {
+      rule?: string
+      updatedInput?: Record<string, unknown>
+    },
+  ) => void
   respondToComputerUsePermission: (
     sessionId: string,
     requestId: string,
@@ -280,8 +289,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     wsManager.send(sessionId, { type: 'user_message', content, attachments })
   },
 
-  respondToPermission: (sessionId, requestId, allowed, rule?) => {
-    wsManager.send(sessionId, { type: 'permission_response', requestId, allowed, ...(rule ? { rule } : {}) })
+  respondToPermission: (sessionId, requestId, allowed, options) => {
+    wsManager.send(sessionId, {
+      type: 'permission_response',
+      requestId,
+      allowed,
+      ...(options?.rule ? { rule: options.rule } : {}),
+      ...(options?.updatedInput ? { updatedInput: options.updatedInput } : {}),
+    })
     set((s) => ({ sessions: updateSessionIn(s.sessions, sessionId, () => ({ pendingPermission: null, chatState: allowed ? 'tool_executing' : 'idle' })) }))
   },
 
@@ -493,14 +508,29 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       case 'permission_request':
         update((s) => ({
-          pendingPermission: { requestId: msg.requestId, toolName: msg.toolName, input: msg.input, description: msg.description },
+          pendingPermission: {
+            requestId: msg.requestId,
+            toolName: msg.toolName,
+            toolUseId: msg.toolUseId,
+            input: msg.input,
+            description: msg.description,
+          },
           pendingComputerUsePermission: null,
           chatState: 'permission_pending',
           activeThinkingId: null,
-          messages: [...s.messages, {
-            id: nextId(), type: 'permission_request', requestId: msg.requestId,
-            toolName: msg.toolName, input: msg.input, description: msg.description, timestamp: Date.now(),
-          }],
+          messages:
+            msg.toolName === 'AskUserQuestion'
+              ? s.messages
+              : [...s.messages, {
+                  id: nextId(),
+                  type: 'permission_request',
+                  requestId: msg.requestId,
+                  toolName: msg.toolName,
+                  toolUseId: msg.toolUseId,
+                  input: msg.input,
+                  description: msg.description,
+                  timestamp: Date.now(),
+                }],
         }))
         break
 

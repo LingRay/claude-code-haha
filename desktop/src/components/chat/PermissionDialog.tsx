@@ -237,7 +237,7 @@ export function PermissionDialog({ requestId, toolName, input, description }: Pr
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => activeTabId && respondToPermission(activeTabId, requestId, true, 'always')}
+            onClick={() => activeTabId && respondToPermission(activeTabId, requestId, true, { rule: 'always' })}
             icon={
               <span className="material-symbols-outlined text-[14px]">verified</span>
             }

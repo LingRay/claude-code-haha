@@ -156,10 +156,7 @@ export class ConversationService {
     this.readErrorStream(sessionId, proc)
 
     proc.exited.then((code) => {
-      console.log(
-        `[ConversationService] CLI process for ${sessionId} exited with code ${code}`,
-      )
-      this.sessions.delete(sessionId)
+      this.handleProcessExit(sessionId, proc, code)
     })
 
     const STARTUP_GRACE_MS = 3000
@@ -232,6 +229,7 @@ export class ConversationService {
     requestId: string,
     allowed: boolean,
     rule?: string,
+    updatedInput?: Record<string, unknown>,
   ): boolean {
     const session = this.sessions.get(sessionId)
     const pendingRequest = session?.pendingPermissionRequests.get(requestId)
@@ -247,7 +245,7 @@ export class ConversationService {
         response: allowed
           ? {
               behavior: 'allow',
-              updatedInput: {},
+              updatedInput: updatedInput ?? {},
               ...(rule === 'always' && pendingRequest
                 ? {
                     updatedPermissions: [
@@ -438,6 +436,21 @@ export class ConversationService {
       session.pendingOutbound.push(line)
     }
     return true
+  }
+
+  private handleProcessExit(
+    sessionId: string,
+    proc: SessionProcess['proc'],
+    code: number,
+  ): void {
+    console.log(
+      `[ConversationService] CLI process for ${sessionId} exited with code ${code}`,
+    )
+
+    const activeSession = this.sessions.get(sessionId)
+    if (activeSession?.proc === proc) {
+      this.sessions.delete(sessionId)
+    }
   }
 
   private getPermissionArgs(
