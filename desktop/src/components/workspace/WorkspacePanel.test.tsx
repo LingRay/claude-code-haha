@@ -539,6 +539,54 @@ describe('WorkspacePanel', () => {
     expect(image.getAttribute('src')).toBe('data:image/png;base64,iVBORw0KGgo=')
   })
 
+  it('renders markdown file previews as formatted documents', async () => {
+    await setWorkspaceState((state) => ({
+      ...state,
+      panelBySession: {
+        ...state.panelBySession,
+        'session-markdown-preview': {
+          isOpen: true,
+          activeView: 'all',
+        },
+      },
+      statusBySession: {
+        ...state.statusBySession,
+        'session-markdown-preview': {
+          state: 'ok',
+          workDir: '/repo',
+          repoName: 'repo',
+          branch: 'main',
+          isGitRepo: true,
+          changedFiles: [],
+        },
+      },
+      previewTabsBySession: {
+        ...state.previewTabsBySession,
+        'session-markdown-preview': [{
+          id: 'file:README.md',
+          path: 'README.md',
+          kind: 'file',
+          title: 'README.md',
+          language: 'markdown',
+          content: '# Project Notes\n\n- **Done** item\n\n```ts\nexport const ok = true\n```',
+          state: 'ok',
+          size: 70,
+        }],
+      },
+      activePreviewTabIdBySession: {
+        ...state.activePreviewTabIdBySession,
+        'session-markdown-preview': 'file:README.md',
+      },
+    }))
+
+    const view = await renderPanel('session-markdown-preview')
+
+    expect(view.getByRole('heading', { name: 'Project Notes', level: 1 })).toBeTruthy()
+    expect(view.getByText('Done')).toBeTruthy()
+    expect(view.container.textContent).toContain('export const ok = true')
+    expect(view.queryByTestId('workspace-code')).toBeNull()
+  })
+
   it('uses the localized view menu label', async () => {
     await setSettingsState({ ...settingsInitialState, locale: 'zh' })
     await setWorkspaceState((state) => ({

@@ -13,6 +13,7 @@ import {
   type WorkspacePreviewKind,
   type WorkspacePreviewTab,
 } from '../../stores/workspacePanelStore'
+import { MarkdownRenderer } from '../markdown/MarkdownRenderer'
 
 type WorkspacePanelProps = {
   sessionId: string
@@ -174,6 +175,13 @@ function normalizePrismLanguage(language: string) {
 
 function getLanguageFromPath(path: string) {
   return normalizePrismLanguage(getFileExtension(path) || 'text')
+}
+
+function isMarkdownPreview(tab: WorkspacePreviewTab) {
+  if (tab.kind !== 'file') return false
+  const language = (tab.language ?? '').toLowerCase()
+  const extension = getFileExtension(tab.path)
+  return language === 'markdown' || language === 'md' || extension === 'md' || extension === 'markdown'
 }
 
 function FileTypeBadge({ name, subtle = false }: { name: string; subtle?: boolean }) {
@@ -412,6 +420,20 @@ function CodeSurface({ value, language }: { value: string; language: string }) {
             {t('workspace.previewLineLimit', { count: PREVIEW_LINE_LIMIT })}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function MarkdownSurface({ value }: { value: string }) {
+  return (
+    <div className="min-h-0 flex-1 overflow-auto bg-[#fdfdfc]">
+      <div className="mx-auto w-full max-w-[860px] px-6 py-5">
+        <MarkdownRenderer
+          content={value}
+          variant="document"
+          className="workspace-markdown-preview prose-p:text-[14px] prose-p:leading-7 prose-h1:text-[24px] prose-h2:text-[18px] prose-h3:text-[15px] prose-code:text-[12px] prose-pre:my-4"
+        />
       </div>
     </div>
   )
@@ -902,6 +924,8 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
             value={activePreviewTab.diff ?? ''}
             path={activePreviewTab.path}
           />
+        ) : state === 'ok' && isMarkdownPreview(activePreviewTab) ? (
+          <MarkdownSurface value={activePreviewTab.content ?? ''} />
         ) : state === 'ok' ? (
           <CodeSurface
             value={activePreviewTab.content ?? ''}

@@ -4,6 +4,7 @@ import { useChatStore } from '../../stores/chatStore'
 import { useWorkspacePanelStore } from '../../stores/workspacePanelStore'
 import { useTranslation } from '../../i18n'
 import { WindowControls, showWindowControls } from './WindowControls'
+import { Folder, FolderOpen, SquareTerminal } from 'lucide-react'
 
 const TAB_WIDTH = 180
 const DRAG_START_THRESHOLD = 4
@@ -278,17 +279,18 @@ export function TabBar() {
         ))}
       </div>
 
-      <div className="flex shrink-0 items-center gap-0.5 px-1.5">
+      <div className="flex shrink-0 items-center gap-1 border-l border-[var(--color-border)]/70 px-2">
         <ToolbarIconButton
-          icon="terminal"
+          icon={<SquareTerminal size={17} strokeWidth={1.9} />}
           label={t('tabs.openTerminal')}
           onClick={() => useTabStore.getState().openTerminalTab()}
         />
         {isActiveSessionTab && activeTabId && (
           <ToolbarIconButton
-            icon={isWorkspacePanelOpen ? 'folder_open' : 'folder'}
+            icon={isWorkspacePanelOpen ? <FolderOpen size={18} strokeWidth={1.9} /> : <Folder size={18} strokeWidth={1.9} />}
             label={t(isWorkspacePanelOpen ? 'tabs.hideWorkspace' : 'tabs.showWorkspace')}
             onClick={() => useWorkspacePanelStore.getState().togglePanel(activeTabId)}
+            active={isWorkspacePanelOpen}
           />
         )}
       </div>
@@ -461,10 +463,12 @@ function ToolbarIconButton({
   icon,
   label,
   onClick,
+  active = false,
 }: {
-  icon: string
+  icon: React.ReactNode
   label: string
   onClick: () => void
+  active?: boolean
 }) {
   return (
     <button
@@ -472,9 +476,14 @@ function ToolbarIconButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)]"
+      data-active={active ? 'true' : 'false'}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-[10px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)] ${
+        active
+          ? 'bg-[var(--color-surface-hover)] text-[var(--color-text-primary)]'
+          : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]'
+      }`}
     >
-      <span className="material-symbols-outlined text-[16px]">{icon}</span>
+      {icon}
     </button>
   )
 }

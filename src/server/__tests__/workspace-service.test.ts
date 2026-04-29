@@ -257,13 +257,17 @@ describe('WorkspaceService', () => {
     expect(diffOutcome.error).toMatch(/outside workspace/)
   })
 
-  it('returns explicit readFile states for text, binary, too-large, and missing targets', async () => {
+  it('returns explicit readFile states for text, binary, large, and missing targets', async () => {
     const workDir = await makeTempDir('workspace-service-files-')
     const service = new WorkspaceService(async () => workDir)
 
     await fs.writeFile(path.join(workDir, 'note.ts'), 'export const answer = 42\n')
     await fs.writeFile(path.join(workDir, 'binary.bin'), Buffer.from([0, 1, 2, 3]))
     await fs.writeFile(path.join(workDir, 'image.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]))
+    await fs.writeFile(
+      path.join(workDir, 'large-image.png'),
+      Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.alloc(ONE_MIB + 1, 0xff)]),
+    )
     await fs.writeFile(path.join(workDir, 'large.txt'), Buffer.alloc(ONE_MIB + 1, 'a'))
     await fs.mkdir(path.join(workDir, 'folder'))
 
@@ -286,10 +290,23 @@ describe('WorkspaceService', () => {
       dataUrl: 'data:image/png;base64,iVBORwA=',
       size: 5,
     })
+    const largeImage = await service.readFile('session-1', 'large-image.png')
+    expect(largeImage).toMatchObject({
+      state: 'ok',
+      previewType: 'image',
+      language: 'image',
+      mimeType: 'image/png',
+      size: ONE_MIB + 5,
+    })
+    expect(largeImage.dataUrl).toStartWith('data:image/png;base64,')
     await expect(service.readFile('session-1', 'large.txt')).resolves.toMatchObject({
-      state: 'too_large',
+      state: 'ok',
+      previewType: 'text',
       language: 'text',
       size: ONE_MIB + 1,
+      readBytes: ONE_MIB,
+      truncated: true,
+      content: 'a'.repeat(ONE_MIB),
     })
     await expect(service.readFile('session-1', 'missing.txt')).resolves.toMatchObject({
       state: 'missing',

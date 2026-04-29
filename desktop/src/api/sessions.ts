@@ -176,6 +176,8 @@ export type WorkspaceReadFileResult = {
   mimeType?: string
   language: string
   size: number
+  truncated?: boolean
+  readBytes?: number
   error?: string
 }
 

@@ -81,6 +81,8 @@ export type WorkspaceReadFileResult = {
   mimeType?: string
   language: string
   size: number
+  truncated?: boolean
+  readBytes?: number
   error?: string
 }
 
@@ -398,18 +400,22 @@ export class WorkspaceService {
     }
 
     const language = this.detectLanguage(resolvedPath.absolutePath)
-    if (stat.stat.size > MAX_PREVIEW_BYTES) {
-      return {
-        state: 'too_large',
-        path: resolvedPath.relativePath,
-        language,
-        size: stat.stat.size,
-      }
-    }
+    const imageMimeType = this.detectImageMimeType(resolvedPath.absolutePath)
 
     let content: Buffer
     try {
-      content = await fs.readFile(resolvedPath.absolutePath)
+      if (!imageMimeType && stat.stat.size > MAX_PREVIEW_BYTES) {
+        const fileHandle = await fs.open(resolvedPath.absolutePath, 'r')
+        try {
+          const previewBuffer = Buffer.alloc(MAX_PREVIEW_BYTES)
+          const { bytesRead } = await fileHandle.read(previewBuffer, 0, MAX_PREVIEW_BYTES, 0)
+          content = previewBuffer.subarray(0, bytesRead)
+        } finally {
+          await fileHandle.close()
+        }
+      } else {
+        content = await fs.readFile(resolvedPath.absolutePath)
+      }
     } catch (error) {
       return {
         state: 'error',
@@ -423,7 +429,6 @@ export class WorkspaceService {
         ),
       }
     }
-    const imageMimeType = this.detectImageMimeType(resolvedPath.absolutePath)
     if (imageMimeType) {
       return {
         state: 'ok',
@@ -452,6 +457,8 @@ export class WorkspaceService {
       content: content.toString('utf8'),
       language,
       size: stat.stat.size,
+      truncated: content.length < stat.stat.size,
+      readBytes: content.length,
     }
   }
 
