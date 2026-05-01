@@ -23,7 +23,7 @@ import {
   replaceSlashCommand,
   resolveSlashUiAction,
 } from '../components/chat/composerUtils'
-import type { AttachmentRef } from '../types/chat'
+import type { AttachmentRef, UIAttachment } from '../types/chat'
 import type { SlashCommandOption } from '../components/chat/composerUtils'
 
 type Attachment = {
@@ -39,6 +39,7 @@ export function EmptySession() {
   const t = useTranslation()
   const [input, setInput] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [workDir, setWorkDir] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
@@ -157,6 +158,73 @@ export function EmptySession() {
     [slashCommands],
   )
 
+  const resolveDraftRuntimeSelection = async () => {
+    const settings = useSettingsStore.getState()
+    let providerState = useProviderStore.getState()
+    if (
+      settings.activeProviderName &&
+      providerState.providers.length === 0 &&
+      !providerState.isLoading
+    ) {
+      await providerState.fetchProviders()
+      providerState = useProviderStore.getState()
+    }
+    const inferredProviderId = providerState.activeId ?? (
+      settings.activeProviderName
+        ? providerState.providers.find((provider) => provider.name === settings.activeProviderName)?.id ?? null
+        : null
+    )
+    return (
+      useSessionRuntimeStore.getState().selections[DRAFT_RUNTIME_SELECTION_KEY]
+      ?? {
+        providerId: inferredProviderId,
+        modelId: settings.currentModel?.id ?? OFFICIAL_DEFAULT_MODEL_ID,
+      }
+    )
+  }
+
+  const openDraftSessionForWorkDir = async (newWorkDir: string) => {
+    setWorkDir(newWorkDir)
+    if (!newWorkDir || isCreatingSession || isSubmitting) return
+
+    setIsCreatingSession(true)
+    try {
+      const draftSelection = await resolveDraftRuntimeSelection()
+      const sessionId = await createSession(newWorkDir)
+      useSessionRuntimeStore.getState().setSelection(sessionId, draftSelection)
+      useSessionRuntimeStore.getState().clearSelection(DRAFT_RUNTIME_SELECTION_KEY)
+      setActiveView('code')
+      useTabStore.getState().openTab(sessionId, 'New Session')
+      connectToSession(sessionId)
+
+      const draftAttachments: UIAttachment[] = attachments.map((attachment) => ({
+        type: attachment.type,
+        name: attachment.name,
+        data: attachment.data,
+        mimeType: attachment.mimeType,
+      }))
+      if (input.trim() || draftAttachments.length > 0) {
+        useChatStore.getState().queueComposerPrefill(sessionId, {
+          text: input,
+          attachments: draftAttachments,
+        })
+      }
+      setInput('')
+      setAttachments([])
+      setFileSearchOpen(false)
+      setSlashMenuOpen(false)
+      setPlusMenuOpen(false)
+      setLocalSlashPanel(null)
+    } catch (error) {
+      addToast({
+        type: 'error',
+        message: error instanceof Error ? error.message : t('empty.failedToCreate'),
+      })
+    } finally {
+      setIsCreatingSession(false)
+    }
+  }
+
   const filteredCommands = useMemo(() => {
     const source = allSlashCommands
     if (!slashFilter) return source
@@ -210,27 +278,7 @@ export function EmptySession() {
 
     setIsSubmitting(true)
     try {
-      const settings = useSettingsStore.getState()
-      let providerState = useProviderStore.getState()
-      if (
-        settings.activeProviderName &&
-        providerState.providers.length === 0 &&
-        !providerState.isLoading
-      ) {
-        await providerState.fetchProviders()
-        providerState = useProviderStore.getState()
-      }
-      const inferredProviderId = providerState.activeId ?? (
-        settings.activeProviderName
-          ? providerState.providers.find((provider) => provider.name === settings.activeProviderName)?.id ?? null
-          : null
-      )
-      const draftSelection =
-        useSessionRuntimeStore.getState().selections[DRAFT_RUNTIME_SELECTION_KEY]
-        ?? {
-          providerId: inferredProviderId,
-          modelId: settings.currentModel?.id ?? OFFICIAL_DEFAULT_MODEL_ID,
-        }
+      const draftSelection = await resolveDraftRuntimeSelection()
       const sessionId = await createSession(workDir || undefined)
       useSessionRuntimeStore.getState().setSelection(sessionId, draftSelection)
       useSessionRuntimeStore.getState().clearSelection(DRAFT_RUNTIME_SELECTION_KEY)
@@ -590,10 +638,10 @@ export function EmptySession() {
               </div>
 
               <div className="flex items-center gap-3">
-                <ModelSelector runtimeKey={DRAFT_RUNTIME_SELECTION_KEY} disabled={isSubmitting} />
+                <ModelSelector runtimeKey={DRAFT_RUNTIME_SELECTION_KEY} disabled={isSubmitting || isCreatingSession} />
                 <button
                   onClick={handleSubmit}
-                  disabled={(!input.trim() && attachments.length === 0) || isSubmitting}
+                  disabled={(!input.trim() && attachments.length === 0) || isSubmitting || isCreatingSession}
                   className="flex w-[112px] items-center justify-center gap-1 rounded-lg bg-[image:var(--gradient-btn-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--color-btn-primary-fg)] shadow-[var(--shadow-button-primary)] transition-all hover:brightness-105 disabled:opacity-30"
                 >
                   {t('common.run')}
@@ -604,7 +652,7 @@ export function EmptySession() {
           </div>
 
           <div>
-            <DirectoryPicker value={workDir} onChange={setWorkDir} />
+            <DirectoryPicker value={workDir} onChange={(path) => void openDraftSessionForWorkDir(path)} />
           </div>
         </div>
       </div>

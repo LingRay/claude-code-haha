@@ -6,6 +6,9 @@ const startDraggingMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 const getCurrentWindowMock = vi.hoisted(() => vi.fn(() => ({
   startDragging: startDraggingMock,
 })))
+const windowControlsMock = vi.hoisted(() => ({
+  show: true,
+}))
 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: getCurrentWindowMock,
@@ -34,8 +37,10 @@ vi.mock('../../i18n', () => ({
 }))
 
 vi.mock('./WindowControls', () => ({
-  WindowControls: () => <div data-testid="window-controls" />,
-  showWindowControls: true,
+  WindowControls: () => (windowControlsMock.show ? <div data-testid="window-controls" /> : null),
+  get showWindowControls() {
+    return windowControlsMock.show
+  },
 }))
 
 describe('TabBar', () => {
@@ -61,6 +66,7 @@ describe('TabBar', () => {
 
     startDraggingMock.mockClear()
     getCurrentWindowMock.mockClear()
+    windowControlsMock.show = true
     vi.resetModules()
   })
 
@@ -132,6 +138,25 @@ describe('TabBar', () => {
 
     const rightButton = screen.getByText('chevron_right').closest('button')
     expect(rightButton?.nextElementSibling).toBe(screen.getByTestId('window-controls'))
+  })
+
+  it('shows the terminal toolbar when no tabs are open', async () => {
+    windowControlsMock.show = false
+    const { TabBar } = await import('./TabBar')
+    const { useTabStore } = await import('../../stores/tabStore')
+
+    useTabStore.setState({ tabs: [], activeTabId: null })
+
+    await act(async () => {
+      render(<TabBar />)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Terminal' }))
+
+    const terminalTabs = useTabStore.getState().tabs.filter((tab) => tab.type === 'terminal')
+    expect(terminalTabs).toHaveLength(1)
+    expect(useTabStore.getState().activeTabId).toBe(terminalTabs[0]?.sessionId)
+    expect(screen.queryByTestId('window-controls')).not.toBeInTheDocument()
   })
 
   it('marks the tab bar as a native drag region', async () => {

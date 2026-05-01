@@ -242,8 +242,6 @@ export function TabBar() {
     void startDragging().catch(() => {})
   }, [])
 
-  if (tabs.length === 0 && !showWindowControls) return null
-
   return (
     <div
       data-testid="tab-bar"
