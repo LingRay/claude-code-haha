@@ -30,6 +30,7 @@ type Attachment = {
   id: string
   name: string
   type: 'image' | 'file'
+  path?: string
   mimeType?: string
   previewUrl?: string
   data?: string
@@ -288,6 +289,7 @@ export function EmptySession() {
       const attachmentPayload: AttachmentRef[] = attachments.map((attachment) => ({
         type: attachment.type,
         name: attachment.name,
+        path: attachment.path,
         data: attachment.data,
         mimeType: attachment.mimeType,
       }))
@@ -336,7 +338,7 @@ export function EmptySession() {
       setAtCursorPos(-1)
     } else {
       setAtFilter(textBeforeCursor.slice(pos + 1))
-      setAtCursorPos(cursorPos)
+      setAtCursorPos(pos)
       setSlashMenuOpen(false)
       setFileSearchOpen(true)
     }
@@ -530,10 +532,37 @@ export function EmptySession() {
                 ref={fileSearchRef}
                 cwd={workDir || ''}
                 filter={atFilter}
-                onSelect={(_path, name) => {
+                onNavigate={(relativePath) => {
+                  if (atCursorPos < 0) return
+                  const replacement = `@${relativePath}`
+                  const tokenEnd = atCursorPos + 1 + atFilter.length
+                  const newValue = `${input.slice(0, atCursorPos)}${replacement}${input.slice(tokenEnd)}`
+                  const newCursorPos = atCursorPos + replacement.length
+                  setInput(newValue)
+                  setAtFilter(relativePath)
+                  requestAnimationFrame(() => {
+                    textareaRef.current?.focus()
+                    textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos)
+                  })
+                }}
+                onSelect={(path, name) => {
                   if (atCursorPos >= 0) {
-                    const newValue = `${input.slice(0, atCursorPos)}${name}${input.slice(atCursorPos)}`
-                    const newCursorPos = atCursorPos + name.length
+                    const attachmentName = name.split('/').filter(Boolean).pop() ?? name
+                    const tokenEnd = atCursorPos + 1 + atFilter.length
+                    const beforeToken = input.slice(0, atCursorPos)
+                    const afterToken = beforeToken ? input.slice(tokenEnd) : input.slice(tokenEnd).replace(/^\s+/, '')
+                    const spacer = beforeToken && afterToken && !/\s$/.test(beforeToken) && !/^\s/.test(afterToken) ? ' ' : ''
+                    const newValue = `${beforeToken}${spacer}${afterToken}`
+                    const newCursorPos = atCursorPos + spacer.length
+                    setAttachments((prev) => [
+                      ...prev,
+                      {
+                        id: `att-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                        name: attachmentName,
+                        type: 'file',
+                        path,
+                      },
+                    ])
                     setInput(newValue)
                     setFileSearchOpen(false)
                     setAtFilter('')

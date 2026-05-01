@@ -264,6 +264,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   sendMessage: (sessionId, content, attachments, options) => {
     const userFacingContent =
       options?.displayContent?.trim() || content.trim()
+    const modelFacingContent = buildModelContent(content, attachments)
     const isMemberSession = !!useTeamStore.getState().getMemberBySessionId(sessionId)
     const visibleAttachments = options?.displayAttachments ?? attachments
     const uiAttachments: UIAttachment[] | undefined =
@@ -315,7 +316,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         id: nextId(),
         type: 'user_text',
         content: userFacingContent,
-        ...(userFacingContent !== content ? { modelContent: content } : {}),
+        ...(userFacingContent !== modelFacingContent ? { modelContent: modelFacingContent } : {}),
         attachments: isMemberSession ? undefined : uiAttachments,
         timestamp: Date.now(),
         ...(isMemberSession ? { pending: true } : {}),
@@ -923,6 +924,16 @@ function pushAssistantHistoryText(
 
 type HistoryMappingOptions = {
   includeTeammateMessages?: boolean
+}
+
+function buildModelContent(content: string, attachments?: AttachmentRef[]): string {
+  const paths = attachments
+    ?.map((attachment) => attachment.path)
+    .filter((path): path is string => typeof path === 'string' && path.length > 0) ?? []
+  const trimmed = content.trim()
+  if (paths.length === 0) return trimmed
+  const prefix = paths.map((path) => `@"${path}"`).join(' ')
+  return `${prefix} ${trimmed || 'Please analyze the attached files.'}`.trim()
 }
 
 function getReferenceName(referencePath: string): string {

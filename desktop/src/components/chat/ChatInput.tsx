@@ -310,7 +310,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
     // Extract filter text after @
     const filter = textBeforeCursor.slice(pos + 1)
     setAtFilter(filter)
-    setAtCursorPos(cursorPos)
+    setAtCursorPos(pos)
     setSlashMenuOpen(false)
     setFileSearchOpen(true)
   }, [])
@@ -629,17 +629,34 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
               ref={fileSearchRef}
               cwd={resolvedWorkDir || ''}
               filter={atFilter}
+              onNavigate={(relativePath) => {
+                if (atCursorPos < 0) return
+                const replacement = `@${relativePath}`
+                const tokenEnd = atCursorPos + 1 + atFilter.length
+                const newValue = `${input.slice(0, atCursorPos)}${replacement}${input.slice(tokenEnd)}`
+                const newCursorPos = atCursorPos + replacement.length
+                setInput(newValue)
+                setAtFilter(relativePath)
+                requestAnimationFrame(() => {
+                  textareaRef.current?.focus()
+                  textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos)
+                })
+              }}
               onSelect={(path, name) => {
                 if (atCursorPos >= 0) {
-                  // Insert name at cursor position, replacing filter text
-                  const newValue = `${input.slice(0, atCursorPos)}${name}${input.slice(atCursorPos)}`
-                  const newCursorPos = atCursorPos + name.length
+                  const referenceName = name.split('/').filter(Boolean).pop() ?? name
+                  const tokenEnd = atCursorPos + 1 + atFilter.length
+                  const beforeToken = input.slice(0, atCursorPos)
+                  const afterToken = beforeToken ? input.slice(tokenEnd) : input.slice(tokenEnd).replace(/^\s+/, '')
+                  const spacer = beforeToken && afterToken && !/\s$/.test(beforeToken) && !/^\s/.test(afterToken) ? ' ' : ''
+                  const newValue = `${beforeToken}${spacer}${afterToken}`
+                  const newCursorPos = atCursorPos + spacer.length
                   if (activeTabId) {
                     addWorkspaceReference(activeTabId, {
                       kind: 'file',
                       path,
                       absolutePath: path,
-                      name,
+                      name: referenceName,
                     })
                   }
                   setInput(newValue)

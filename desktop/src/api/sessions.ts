@@ -201,6 +201,22 @@ export type WorkspaceDiffResult = {
   error?: string
 }
 
+export type SessionTurnCheckpoint = {
+  target: SessionRewindResponse['target']
+  conversation?: SessionRewindResponse['conversation']
+  code: SessionRewindResponse['code']
+  workDir?: string
+}
+
+export type SessionTurnCheckpointsResponse = {
+  checkpoints: SessionTurnCheckpoint[]
+}
+
+export type TurnCheckpointDiffResult = WorkspaceDiffResult & {
+  target?: SessionRewindResponse['target']
+  workDir?: string
+}
+
 function buildWorkspacePath(
   sessionId: string,
   resource: 'status' | 'tree' | 'file' | 'diff',
@@ -277,6 +293,19 @@ export const sessionsApi = {
 
   getWorkspaceDiff(sessionId: string, workspacePath: string) {
     return api.get<WorkspaceDiffResult>(buildWorkspacePath(sessionId, 'diff', workspacePath))
+  },
+
+  getTurnCheckpoints(sessionId: string) {
+    return api.get<SessionTurnCheckpointsResponse>(`/api/sessions/${sessionId}/turn-checkpoints`)
+  },
+
+  getTurnCheckpointDiff(sessionId: string, targetUserMessageId: string, workspacePath: string) {
+    const query = new URLSearchParams()
+    query.set('targetUserMessageId', targetUserMessageId)
+    query.set('path', workspacePath)
+    return api.get<TurnCheckpointDiffResult>(
+      `/api/sessions/${sessionId}/turn-checkpoints/diff?${query.toString()}`,
+    )
   },
 
   rewind(sessionId: string, body: {

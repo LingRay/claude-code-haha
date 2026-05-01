@@ -221,6 +221,96 @@ async function writeFileHistoryBackup(
   await fs.writeFile(path.join(dir, backupFileName), content, 'utf-8')
 }
 
+type ThreeTurnCheckpointFixture = {
+  sessionId: string
+  workDir: string
+  stepFile: string
+  createdFile: string
+  firstUserId: string
+  secondUserId: string
+  thirdUserId: string
+}
+
+async function createThreeTurnCheckpointFixture(
+  sessionId: string,
+): Promise<ThreeTurnCheckpointFixture> {
+  const workDir = path.join(tmpDir, `turn-checkpoints-${sessionId}`)
+  const stepFile = path.join(workDir, 'src', 'step.js')
+  const createdFile = path.join(workDir, 'notes', 'generated.txt')
+  const firstUserId = crypto.randomUUID()
+  const secondUserId = crypto.randomUUID()
+  const thirdUserId = crypto.randomUUID()
+  const backupBase = `${sessionId}-step@v1`
+  const backupV1 = `${sessionId}-step@v2`
+  const backupV2 = `${sessionId}-step@v3`
+
+  await fs.mkdir(path.dirname(stepFile), { recursive: true })
+  await fs.mkdir(path.dirname(createdFile), { recursive: true })
+  await fs.writeFile(stepFile, "export const STEP = 'v3'\n", 'utf-8')
+  await fs.writeFile(createdFile, 'generated third turn\n', 'utf-8')
+  await writeFileHistoryBackup(sessionId, backupBase, "export const STEP = 'base'\n")
+  await writeFileHistoryBackup(sessionId, backupV1, "export const STEP = 'v1'\n")
+  await writeFileHistoryBackup(sessionId, backupV2, "export const STEP = 'v2'\n")
+
+  await writeSessionFile('-tmp-api-turn-checkpoints', sessionId, [
+    makeSessionMetaEntry(workDir),
+    makeFileHistorySnapshotEntry(firstUserId, {
+      'src/step.js': {
+        backupFileName: backupBase,
+        version: 1,
+        backupTime: '2026-01-01T00:00:00.000Z',
+      },
+    }),
+    {
+      ...makeUserEntry('make v1', firstUserId),
+      cwd: workDir,
+      sessionId,
+    },
+    makeAssistantEntry('DONE v1', firstUserId),
+    makeFileHistorySnapshotEntry(secondUserId, {
+      'src/step.js': {
+        backupFileName: backupV1,
+        version: 2,
+        backupTime: '2026-01-01T00:00:00.000Z',
+      },
+    }),
+    {
+      ...makeUserEntry('make v2', secondUserId),
+      cwd: workDir,
+      sessionId,
+    },
+    makeAssistantEntry('DONE v2', secondUserId),
+    makeFileHistorySnapshotEntry(thirdUserId, {
+      'src/step.js': {
+        backupFileName: backupV2,
+        version: 3,
+        backupTime: '2026-01-01T00:00:00.000Z',
+      },
+      'notes/generated.txt': {
+        backupFileName: null,
+        version: 3,
+        backupTime: '2026-01-01T00:00:00.000Z',
+      },
+    }),
+    {
+      ...makeUserEntry('make v3 and create file', thirdUserId),
+      cwd: workDir,
+      sessionId,
+    },
+    makeAssistantEntry('DONE v3', thirdUserId),
+  ])
+
+  return {
+    sessionId,
+    workDir,
+    stepFile,
+    createdFile,
+    firstUserId,
+    secondUserId,
+    thirdUserId,
+  }
+}
+
 // ============================================================================
 // SessionService tests
 // ============================================================================
@@ -1881,6 +1971,172 @@ describe('Sessions API', () => {
     expect(executeRes.status).toBe(200)
     expect(await fs.readFile(firstFile, 'utf-8')).toBe("export const STEP = 'v1'\n")
     await expect(fs.stat(createdFile)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('GET /api/sessions/:id/turn-checkpoints should list completed turn previews with turn-bound diff stats', async () => {
+    const fixture = await createThreeTurnCheckpointFixture(
+      '99999999-bbbb-cccc-dddd-eeeeeeeeeeee',
+    )
+
+    const res = await fetch(`${baseUrl}/api/sessions/${fixture.sessionId}/turn-checkpoints`)
+    expect(res.status).toBe(200)
+
+    const body = await res.json() as {
+      checkpoints: Array<{
+        target: {
+          targetUserMessageId: string
+          userMessageIndex: number
+          userMessageCount: number
+        }
+        conversation: { messagesRemoved: number }
+        code: {
+          available: boolean
+          filesChanged: string[]
+          insertions: number
+          deletions: number
+        }
+        workDir: string
+      }>
+    }
+
+    expect(body.checkpoints).toHaveLength(3)
+    expect(body.checkpoints).toEqual([
+      {
+        target: {
+          targetUserMessageId: fixture.firstUserId,
+          userMessageIndex: 0,
+          userMessageCount: 3,
+        },
+        conversation: { messagesRemoved: 6 },
+        code: {
+          available: true,
+          filesChanged: [fixture.stepFile],
+          insertions: 1,
+          deletions: 1,
+        },
+        workDir: fixture.workDir,
+      },
+      {
+        target: {
+          targetUserMessageId: fixture.secondUserId,
+          userMessageIndex: 1,
+          userMessageCount: 3,
+        },
+        conversation: { messagesRemoved: 4 },
+        code: {
+          available: true,
+          filesChanged: [fixture.stepFile],
+          insertions: 1,
+          deletions: 1,
+        },
+        workDir: fixture.workDir,
+      },
+      {
+        target: {
+          targetUserMessageId: fixture.thirdUserId,
+          userMessageIndex: 2,
+          userMessageCount: 3,
+        },
+        conversation: { messagesRemoved: 2 },
+        code: {
+          available: true,
+          filesChanged: [fixture.stepFile, fixture.createdFile],
+          insertions: 2,
+          deletions: 1,
+        },
+        workDir: fixture.workDir,
+      },
+    ])
+  })
+
+  it('GET /api/sessions/:id/turn-checkpoints/diff should return target-bound checkpoint diffs', async () => {
+    const fixture = await createThreeTurnCheckpointFixture(
+      '99999999-bbbb-cccc-dddd-ffffffffffff',
+    )
+
+    const secondTurnRes = await fetch(
+      `${baseUrl}/api/sessions/${fixture.sessionId}/turn-checkpoints/diff?targetUserMessageId=${fixture.secondUserId}&path=src/step.js`,
+    )
+    expect(secondTurnRes.status).toBe(200)
+    const secondTurnBody = await secondTurnRes.json() as {
+      state: string
+      path: string
+      diff?: string
+      target: { targetUserMessageId: string }
+    }
+    expect(secondTurnBody.target.targetUserMessageId).toBe(fixture.secondUserId)
+    expect(secondTurnBody.state).toBe('ok')
+    expect(secondTurnBody.path).toBe('src/step.js')
+    expect(secondTurnBody.diff).toContain("export const STEP = 'v2'")
+    expect(secondTurnBody.diff).toContain("export const STEP = 'v1'")
+    expect(secondTurnBody.diff).not.toContain("export const STEP = 'v3'")
+
+    const thirdTurnRes = await fetch(
+      `${baseUrl}/api/sessions/${fixture.sessionId}/turn-checkpoints/diff?targetUserMessageId=${fixture.thirdUserId}&path=src/step.js`,
+    )
+    expect(thirdTurnRes.status).toBe(200)
+    const thirdTurnBody = await thirdTurnRes.json() as {
+      state: string
+      diff?: string
+      target: { targetUserMessageId: string }
+    }
+    expect(thirdTurnBody.target.targetUserMessageId).toBe(fixture.thirdUserId)
+    expect(thirdTurnBody.state).toBe('ok')
+    expect(thirdTurnBody.diff).toContain("export const STEP = 'v3'")
+    expect(thirdTurnBody.diff).toContain("export const STEP = 'v2'")
+    expect(thirdTurnBody.diff).not.toContain("export const STEP = 'v1'")
+
+    const createdFileRes = await fetch(
+      `${baseUrl}/api/sessions/${fixture.sessionId}/turn-checkpoints/diff?targetUserMessageId=${fixture.thirdUserId}&path=notes/generated.txt`,
+    )
+    expect(createdFileRes.status).toBe(200)
+    const createdFileBody = await createdFileRes.json() as {
+      state: string
+      diff?: string
+    }
+    expect(createdFileBody.state).toBe('ok')
+    expect(createdFileBody.diff).toContain('generated third turn')
+    expect(createdFileBody.diff).toContain('/dev/null')
+  })
+
+  it('POST /api/sessions/:id/rewind should restore the base state when rewinding the first turn of a three-turn file history', async () => {
+    const fixture = await createThreeTurnCheckpointFixture(
+      'aaaaaaaa-1111-2222-3333-444444444444',
+    )
+
+    const executeRes = await fetch(`${baseUrl}/api/sessions/${fixture.sessionId}/rewind`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userMessageIndex: 0 }),
+    })
+    expect(executeRes.status).toBe(200)
+
+    expect(await fs.readFile(fixture.stepFile, 'utf-8')).toBe("export const STEP = 'base'\n")
+    await expect(fs.stat(fixture.createdFile)).rejects.toMatchObject({ code: 'ENOENT' })
+
+    const remainingMessages = await service.getSessionMessages(fixture.sessionId)
+    expect(remainingMessages).toHaveLength(0)
+  })
+
+  it('POST /api/sessions/:id/rewind should keep the first turn and remove later file changes when rewinding the second turn of a three-turn history', async () => {
+    const fixture = await createThreeTurnCheckpointFixture(
+      'aaaaaaaa-5555-6666-7777-888888888888',
+    )
+
+    const executeRes = await fetch(`${baseUrl}/api/sessions/${fixture.sessionId}/rewind`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userMessageIndex: 1 }),
+    })
+    expect(executeRes.status).toBe(200)
+
+    expect(await fs.readFile(fixture.stepFile, 'utf-8')).toBe("export const STEP = 'v1'\n")
+    await expect(fs.stat(fixture.createdFile)).rejects.toMatchObject({ code: 'ENOENT' })
+
+    const remainingMessages = await service.getSessionMessages(fixture.sessionId)
+    expect(remainingMessages).toHaveLength(2)
+    expect(remainingMessages[0]?.id).toBe(fixture.firstUserId)
+    expect(remainingMessages[1]?.type).toBe('assistant')
   })
 
   // --------------------------------------------------------------------------

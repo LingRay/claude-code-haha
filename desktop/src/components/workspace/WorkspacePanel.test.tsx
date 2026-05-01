@@ -120,6 +120,7 @@ vi.mock('../../api/sessions', () => ({
 }))
 
 import { useSettingsStore } from '../../stores/settingsStore'
+import { useChatStore } from '../../stores/chatStore'
 import { useWorkspaceChatContextStore } from '../../stores/workspaceChatContextStore'
 import { useWorkspacePanelStore } from '../../stores/workspacePanelStore'
 import { WorkspacePanel } from './WorkspacePanel'
@@ -128,17 +129,38 @@ describe('WorkspacePanel', () => {
   const workspaceInitialState = useWorkspacePanelStore.getInitialState()
   const workspaceChatInitialState = useWorkspaceChatContextStore.getInitialState()
   const settingsInitialState = useSettingsStore.getInitialState()
+  const chatInitialState = useChatStore.getInitialState()
 
   beforeEach(async () => {
     vi.clearAllMocks()
     await setWorkspaceState(workspaceInitialState)
+    useChatStore.setState(chatInitialState, true)
     useWorkspaceChatContextStore.setState(workspaceChatInitialState, true)
     await setSettingsState({ ...settingsInitialState, locale: 'en' })
+
+    getMocks().getWorkspaceStatusMock.mockImplementation(async (sessionId: string) =>
+      useWorkspacePanelStore.getState().statusBySession[sessionId] ?? {
+        state: 'ok',
+        workDir: '/repo',
+        repoName: 'repo',
+        branch: 'main',
+        isGitRepo: true,
+        changedFiles: [],
+      },
+    )
+    getMocks().getWorkspaceTreeMock.mockImplementation(async (sessionId: string, path = '') =>
+      useWorkspacePanelStore.getState().treeBySessionPath[sessionId]?.[path] ?? {
+        state: 'ok',
+        path,
+        entries: [],
+      },
+    )
   })
 
   afterEach(async () => {
     cleanup()
     await setWorkspaceState(workspaceInitialState)
+    useChatStore.setState(chatInitialState, true)
     useWorkspaceChatContextStore.setState(workspaceChatInitialState, true)
     await setSettingsState(settingsInitialState)
     vi.restoreAllMocks()
@@ -232,6 +254,101 @@ describe('WorkspacePanel', () => {
     expect(expandedPanel.style.maxWidth).toBe('min(62%, calc(100% - 328px))')
     expect(expandedPanel.style.minWidth).toBe('min(420px, 54%)')
     expect(view.getAllByText('Diff').length).toBeGreaterThan(0)
+  })
+
+  it('refreshes status on open and switches back to changed files when new changes exist', async () => {
+    getMocks().getWorkspaceStatusMock.mockResolvedValue({
+      state: 'ok',
+      workDir: '/repo',
+      repoName: 'repo',
+      branch: 'main',
+      isGitRepo: true,
+      changedFiles: [
+        {
+          path: 'src/Fresh.ts',
+          status: 'modified',
+          additions: 4,
+          deletions: 1,
+        },
+      ],
+    })
+    getMocks().getWorkspaceTreeMock.mockResolvedValue({
+      state: 'ok',
+      path: '',
+      entries: [{ name: 'src', path: 'src', isDirectory: true }],
+    })
+
+    await setWorkspaceState((state) => ({
+      ...state,
+      panelBySession: {
+        ...state.panelBySession,
+        'session-stale-all': {
+          isOpen: true,
+          activeView: 'all',
+        },
+      },
+      statusBySession: {
+        ...state.statusBySession,
+        'session-stale-all': {
+          state: 'ok',
+          workDir: '/repo',
+          repoName: 'repo',
+          branch: 'main',
+          isGitRepo: true,
+          changedFiles: [],
+        },
+      },
+    }))
+
+    const view = await renderPanel('session-stale-all')
+
+    await waitFor(() => {
+      expect(getMocks().getWorkspaceStatusMock).toHaveBeenCalledWith('session-stale-all')
+    })
+    await waitFor(() => {
+      expect(view.getByRole('button', { name: 'Changed files' })).toBeTruthy()
+    })
+    expect(view.getByText('src/Fresh.ts')).toBeTruthy()
+  })
+
+  it('loads workspace status when opened while the chat is running', async () => {
+    getMocks().getWorkspaceStatusMock.mockResolvedValue({
+      state: 'ok',
+      workDir: '/repo',
+      repoName: 'repo',
+      branch: 'main',
+      isGitRepo: true,
+      changedFiles: [
+        {
+          path: 'src/running.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+        },
+      ],
+    })
+
+    useChatStore.setState({
+      sessions: {
+        'session-running-open': {
+          chatState: 'thinking',
+        } as never,
+      },
+    })
+
+    await act(() => {
+      useWorkspacePanelStore.getState().openPanel('session-running-open')
+    })
+
+    const view = await renderPanel('session-running-open')
+
+    await waitFor(() => {
+      expect(getMocks().getWorkspaceStatusMock).toHaveBeenCalledWith('session-running-open')
+    })
+    await waitFor(() => {
+      expect(view.getByText('src/running.ts')).toBeTruthy()
+    })
+    expect(view.queryByText('Loading...')).toBeNull()
   })
 
   it('renders transcript-derived changed files for non-git sessions', async () => {
@@ -459,6 +576,7 @@ describe('WorkspacePanel', () => {
         'session-tabs': {
           isOpen: true,
           activeView: 'changed',
+          hasUserSelectedView: true,
         },
       },
       statusBySession: {
@@ -534,6 +652,7 @@ describe('WorkspacePanel', () => {
         'session-dark-theme': {
           isOpen: true,
           activeView: 'changed',
+          hasUserSelectedView: true,
         },
       },
       statusBySession: {
@@ -579,8 +698,8 @@ describe('WorkspacePanel', () => {
     expect(classNameContains(codeSurface, 'bg-white')).toBe(false)
   })
 
-  it('caps rendered preview lines to keep large diffs responsive', async () => {
-    const longDiff = Array.from({ length: 650 }, (_, index) => `+line ${index + 1}`).join('\n')
+  it('can expand long diff previews beyond the default rendered line cap', async () => {
+    const longDiff = Array.from({ length: 2300 }, (_, index) => `+line ${index + 1}`).join('\n')
 
     await setWorkspaceState((state) => ({
       ...state,
@@ -589,6 +708,7 @@ describe('WorkspacePanel', () => {
         'session-large-preview': {
           isOpen: true,
           activeView: 'changed',
+          hasUserSelectedView: true,
         },
       },
       statusBySession: {
@@ -623,9 +743,59 @@ describe('WorkspacePanel', () => {
     const highlightedCode = view.getByTestId('workspace-code').textContent ?? ''
 
     expect(highlightedCode).toContain('+line 1')
-    expect(highlightedCode).toContain('+line 420')
-    expect(highlightedCode).not.toContain('+line 421')
-    expect(view.getByText('Showing first 420 lines. Open in your editor for the full file.')).toBeTruthy()
+    expect(highlightedCode).toContain('+line 2000')
+    expect(highlightedCode).not.toContain('+line 2001')
+    await clickElement(view.getByRole('button', { name: 'Show all loaded lines' }))
+
+    await waitFor(() => {
+      expect(view.getByTestId('workspace-code').textContent).toContain('+line 2300')
+    })
+    expect(view.getByRole('button', { name: 'Collapse preview' })).toBeTruthy()
+  })
+
+  it('can expand long file previews beyond the default rendered line cap', async () => {
+    const longFile = Array.from({ length: 2300 }, (_, index) => `const line${index + 1} = ${index + 1}`).join('\n')
+
+    await setWorkspaceState((state) => ({
+      ...state,
+      panelBySession: {
+        ...state.panelBySession,
+        'session-large-file-preview': {
+          isOpen: true,
+          activeView: 'all',
+        },
+      },
+      previewTabsBySession: {
+        ...state.previewTabsBySession,
+        'session-large-file-preview': [{
+          id: 'file:large-file.ts',
+          path: 'large-file.ts',
+          kind: 'file',
+          title: 'large-file.ts',
+          content: longFile,
+          language: 'typescript',
+          previewType: 'text',
+          state: 'ok',
+        }],
+      },
+      activePreviewTabIdBySession: {
+        ...state.activePreviewTabIdBySession,
+        'session-large-file-preview': 'file:large-file.ts',
+      },
+    }))
+
+    const view = await renderPanel('session-large-file-preview')
+    const highlightedCode = view.getByTestId('workspace-code').textContent ?? ''
+
+    expect(highlightedCode).toContain('const line1 = 1')
+    expect(highlightedCode).toContain('const line2000 = 2000')
+    expect(highlightedCode).not.toContain('const line2001 = 2001')
+    await clickElement(view.getByRole('button', { name: 'Show all loaded lines' }))
+
+    await waitFor(() => {
+      expect(view.getByTestId('workspace-code').textContent).toContain('const line2300 = 2300')
+    })
+    expect(view.getByRole('button', { name: 'Collapse preview' })).toBeTruthy()
   })
 
   it('renders image previews from workspace files', async () => {
@@ -724,6 +894,7 @@ describe('WorkspacePanel', () => {
         'session-preview-menu': {
           isOpen: true,
           activeView: 'changed',
+          hasUserSelectedView: true,
         },
       },
       statusBySession: {
@@ -922,6 +1093,7 @@ describe('WorkspacePanel', () => {
         'session-zh': {
           isOpen: true,
           activeView: 'changed',
+          hasUserSelectedView: true,
         },
       },
       statusBySession: {
@@ -950,6 +1122,7 @@ describe('WorkspacePanel', () => {
         'session-compact-header': {
           isOpen: true,
           activeView: 'changed',
+          hasUserSelectedView: true,
         },
       },
       statusBySession: {
@@ -987,6 +1160,7 @@ describe('WorkspacePanel', () => {
         'session-empty': {
           isOpen: true,
           activeView: 'changed',
+          hasUserSelectedView: true,
         },
       },
       statusBySession: {
@@ -1006,6 +1180,20 @@ describe('WorkspacePanel', () => {
 
     expect(view.getByText('No changes')).toBeTruthy()
 
+    getMocks().getWorkspaceStatusMock.mockImplementation(async (sessionId: string) => {
+      if (sessionId === 'session-error') {
+        throw new Error('status failed')
+      }
+      return useWorkspacePanelStore.getState().statusBySession[sessionId] ?? {
+        state: 'ok',
+        workDir: '/repo',
+        repoName: 'repo',
+        branch: 'main',
+        isGitRepo: true,
+        changedFiles: [],
+      }
+    })
+
     await setWorkspaceState((state) => ({
       ...state,
       panelBySession: {
@@ -1013,6 +1201,7 @@ describe('WorkspacePanel', () => {
         'session-error': {
           isOpen: true,
           activeView: 'changed',
+          hasUserSelectedView: true,
         },
       },
       errors: {
@@ -1028,6 +1217,8 @@ describe('WorkspacePanel', () => {
       view.rerender(<WorkspacePanel sessionId="session-error" />)
     })
 
-    expect(view.getByText('status failed')).toBeTruthy()
+    await waitFor(() => {
+      expect(view.getByText('status failed')).toBeTruthy()
+    })
   })
 })

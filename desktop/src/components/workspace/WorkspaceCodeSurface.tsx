@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react'
 import { Highlight, type PrismTheme } from 'prism-react-renderer'
 import { useTranslation } from '../../i18n'
 
-export const WORKSPACE_PREVIEW_LINE_LIMIT = 420
+export const WORKSPACE_PREVIEW_LINE_LIMIT = 2000
+export const WORKSPACE_PLAIN_TEXT_LINE_THRESHOLD = 5000
 
 export const workspacePrismTheme: PrismTheme = {
   plain: {
@@ -95,10 +97,15 @@ export function WorkspaceDiffSurface({
   lineLimit?: number
 }) {
   const t = useTranslation()
+  const [showAllLines, setShowAllLines] = useState(false)
   const lines = value.split('\n')
-  const visibleLines = lines.slice(0, lineLimit)
-  const hiddenLineCount = Math.max(0, lines.length - visibleLines.length)
+  const visibleLines = showAllLines ? lines : lines.slice(0, lineLimit)
   const language = getLanguageFromPath(path)
+  const usePlainLargePreview = showAllLines && lines.length > WORKSPACE_PLAIN_TEXT_LINE_THRESHOLD
+
+  useEffect(() => {
+    setShowAllLines(false)
+  }, [path, value])
 
   return (
     <div className={className}>
@@ -119,7 +126,7 @@ export function WorkspaceDiffSurface({
 
             return (
               <div
-                key={`${index}:${line}`}
+                key={index}
                 className={`grid grid-cols-[48px_18px_minmax(0,1fr)] gap-2 px-3 ${
                   isAdded
                     ? 'bg-[var(--color-diff-added-bg)]'
@@ -153,7 +160,7 @@ export function WorkspaceDiffSurface({
                         : ''
                   }`}
                 >
-                  {isCodeLine ? (
+                  {isCodeLine && !usePlainLargePreview ? (
                     code ? <InlineHighlightedCode value={code} language={language} /> : ' '
                   ) : (
                     code || ' '
@@ -163,9 +170,20 @@ export function WorkspaceDiffSurface({
             )
           })}
         </pre>
-        {hiddenLineCount > 0 && (
-          <div className="sticky bottom-0 border-t border-[var(--color-border)] bg-[var(--color-surface-glass)] px-3 py-2 text-xs text-[var(--color-text-tertiary)] backdrop-blur">
-            {t('workspace.previewLineLimit', { count: lineLimit })}
+        {lines.length > lineLimit && (
+          <div className="sticky bottom-0 flex items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface-glass)] px-3 py-2 text-xs text-[var(--color-text-tertiary)] backdrop-blur">
+            <span>
+              {showAllLines
+                ? t('workspace.previewAllLines', { total: lines.length })
+                : t('workspace.previewLineLimit', { count: visibleLines.length, total: lines.length })}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowAllLines((current) => !current)}
+              className="ml-auto rounded-[6px] px-2 py-1 text-[12px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
+            >
+              {showAllLines ? t('workspace.collapsePreview') : t('workspace.showAllLoadedLines')}
+            </button>
           </div>
         )}
       </div>

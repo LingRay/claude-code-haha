@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { Highlight } from 'prism-react-renderer'
 import type {
   WorkspaceChangedFile,
@@ -14,11 +14,13 @@ import {
   type WorkspacePreviewKind,
   type WorkspacePreviewTab,
 } from '../../stores/workspacePanelStore'
+import { useChatStore } from '../../stores/chatStore'
 import { useWorkspaceChatContextStore } from '../../stores/workspaceChatContextStore'
 import { MarkdownRenderer } from '../markdown/MarkdownRenderer'
 import {
   getFileExtension,
   normalizePrismLanguage,
+  WORKSPACE_PLAIN_TEXT_LINE_THRESHOLD,
   WORKSPACE_PREVIEW_LINE_LIMIT,
   WorkspaceDiffSurface,
   workspacePrismTheme,
@@ -315,11 +317,18 @@ function CodeSurface({
   const t = useTranslation()
   const [commentLine, setCommentLine] = useState<number | null>(null)
   const [commentDraft, setCommentDraft] = useState('')
+  const [showAllLines, setShowAllLines] = useState(false)
   const lines = value.split('\n')
-  const visibleLines = lines.slice(0, WORKSPACE_PREVIEW_LINE_LIMIT)
-  const visibleCode = visibleLines.join('\n')
-  const hiddenLineCount = Math.max(0, lines.length - visibleLines.length)
+  const visibleLines = showAllLines ? lines : lines.slice(0, WORKSPACE_PREVIEW_LINE_LIMIT)
   const activeQuote = commentLine ? visibleLines[commentLine - 1] ?? '' : ''
+  const usePlainLargePreview = showAllLines && lines.length > WORKSPACE_PLAIN_TEXT_LINE_THRESHOLD
+  const visibleCode = usePlainLargePreview ? '' : visibleLines.join('\n')
+
+  useEffect(() => {
+    setShowAllLines(false)
+    setCommentLine(null)
+    setCommentDraft('')
+  }, [language, value])
 
   const submitLineComment = () => {
     if (!commentLine || !commentDraft.trim()) return
@@ -328,99 +337,142 @@ function CodeSurface({
     setCommentDraft('')
   }
 
+  const renderLineCommentEditor = (lineNumber: number) => {
+    if (commentLine !== lineNumber) return null
+
+    return (
+      <div className="grid grid-cols-[48px_minmax(0,720px)] gap-3 bg-[var(--color-brand)]/10 px-3 py-2">
+        <span aria-hidden="true" />
+        <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] shadow-sm">
+          <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
+            <span className="material-symbols-outlined text-[15px] text-[var(--color-text-tertiary)]">chat_bubble</span>
+            <span className="text-[12px] font-semibold text-[var(--color-text-primary)]">{t('workspace.localComment')}</span>
+            <span className="ml-auto text-[11px] text-[var(--color-text-tertiary)]">
+              {t('workspace.commentLineTarget', { line: lineNumber })}
+            </span>
+          </div>
+          <textarea
+            value={commentDraft}
+            onChange={(event) => setCommentDraft(event.target.value)}
+            autoFocus
+            rows={3}
+            placeholder={t('workspace.commentPlaceholder')}
+            className="block w-full resize-none bg-transparent px-3 py-3 text-[13px] leading-6 text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
+          />
+          <div className="flex justify-end gap-2 px-3 pb-3">
+            <button
+              type="button"
+              onClick={() => {
+                setCommentLine(null)
+                setCommentDraft('')
+              }}
+              className="rounded-[7px] px-2.5 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={submitLineComment}
+              disabled={!commentDraft.trim()}
+              className="rounded-[7px] bg-[var(--color-text-primary)] px-2.5 py-1 text-[12px] font-medium text-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {t('workspace.addCommentToChat')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const renderLineNumberButton = (lineNumber: number) => (
+    <button
+      type="button"
+      aria-label={t('workspace.commentLine', { line: lineNumber })}
+      onClick={() => {
+        setCommentLine(lineNumber)
+        setCommentDraft('')
+      }}
+      className="select-none text-right text-[11px] text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-brand)] focus-visible:outline-none focus-visible:text-[var(--color-brand)]"
+    >
+      {lineNumber}
+    </button>
+  )
+
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-[var(--color-code-bg)]">
       <div className="relative min-w-max py-2">
-        <Highlight
-          theme={workspacePrismTheme}
-          code={visibleCode}
-          language={normalizePrismLanguage(language)}
-        >
-          {({ tokens, getLineProps, getTokenProps }) => (
-            <pre
-              data-workspace-code=""
-              data-testid="workspace-code"
-              className="m-0 font-[var(--font-mono)] text-[12px] leading-[1.55]"
-              style={{ color: 'var(--color-code-fg)', background: 'transparent' }}
-            >
-              {tokens.map((line, index) => {
-                const { key: lineKey, ...lineProps } = getLineProps({ line, key: index })
-                const lineNumber = index + 1
-                return (
-                  <div key={String(lineKey)}>
-                    <div
-                      {...lineProps}
-                      className="group grid grid-cols-[48px_minmax(0,1fr)] gap-3 px-3 hover:bg-[var(--color-surface-hover)]"
-                    >
-                      <button
-                        type="button"
-                        aria-label={t('workspace.commentLine', { line: lineNumber })}
-                        onClick={() => {
-                          setCommentLine(lineNumber)
-                          setCommentDraft('')
-                        }}
-                        className="select-none text-right text-[11px] text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-brand)] focus-visible:outline-none focus-visible:text-[var(--color-brand)]"
-                      >
-                        {lineNumber}
-                      </button>
-                      <span className="whitespace-pre pr-6">
-                        {line.length === 1 && line[0]?.empty ? ' ' : line.map((token, tokenIndex) => {
-                          const { key: tokenKey, ...tokenProps } = getTokenProps({ token, key: tokenIndex })
-                          return <span key={String(tokenKey)} {...tokenProps} />
-                        })}
-                      </span>
-                    </div>
-                    {commentLine === lineNumber && (
-                      <div className="grid grid-cols-[48px_minmax(0,720px)] gap-3 bg-[var(--color-brand)]/10 px-3 py-2">
-                        <span aria-hidden="true" />
-                        <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] shadow-sm">
-                          <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
-                            <span className="material-symbols-outlined text-[15px] text-[var(--color-text-tertiary)]">chat_bubble</span>
-                            <span className="text-[12px] font-semibold text-[var(--color-text-primary)]">{t('workspace.localComment')}</span>
-                            <span className="ml-auto text-[11px] text-[var(--color-text-tertiary)]">
-                              {t('workspace.commentLineTarget', { line: lineNumber })}
-                            </span>
-                          </div>
-                          <textarea
-                            value={commentDraft}
-                            onChange={(event) => setCommentDraft(event.target.value)}
-                            autoFocus
-                            rows={3}
-                            placeholder={t('workspace.commentPlaceholder')}
-                            className="block w-full resize-none bg-transparent px-3 py-3 text-[13px] leading-6 text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
-                          />
-                          <div className="flex justify-end gap-2 px-3 pb-3">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCommentLine(null)
-                                setCommentDraft('')
-                              }}
-                              className="rounded-[7px] px-2.5 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
-                            >
-                              {t('common.cancel')}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={submitLineComment}
-                              disabled={!commentDraft.trim()}
-                              className="rounded-[7px] bg-[var(--color-text-primary)] px-2.5 py-1 text-[12px] font-medium text-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-45"
-                            >
-                              {t('workspace.addCommentToChat')}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+        {usePlainLargePreview ? (
+          <pre
+            data-workspace-code=""
+            data-testid="workspace-code"
+            className="m-0 font-[var(--font-mono)] text-[12px] leading-[1.55]"
+            style={{ color: 'var(--color-code-fg)', background: 'transparent' }}
+          >
+            {visibleLines.map((line, index) => {
+              const lineNumber = index + 1
+              return (
+                <div key={lineNumber}>
+                  <div className="group grid grid-cols-[48px_minmax(0,1fr)] gap-3 px-3 hover:bg-[var(--color-surface-hover)]">
+                    {renderLineNumberButton(lineNumber)}
+                    <span className="whitespace-pre pr-6">{line || ' '}</span>
                   </div>
-                )
-              })}
-            </pre>
-          )}
-        </Highlight>
-        {hiddenLineCount > 0 && (
-          <div className="sticky bottom-0 border-t border-[var(--color-border)] bg-[var(--color-surface-glass)] px-3 py-2 text-xs text-[var(--color-text-tertiary)] backdrop-blur">
-            {t('workspace.previewLineLimit', { count: WORKSPACE_PREVIEW_LINE_LIMIT })}
+                  {renderLineCommentEditor(lineNumber)}
+                </div>
+              )
+            })}
+          </pre>
+        ) : (
+          <Highlight
+            theme={workspacePrismTheme}
+            code={visibleCode}
+            language={normalizePrismLanguage(language)}
+          >
+            {({ tokens, getLineProps, getTokenProps }) => (
+              <pre
+                data-workspace-code=""
+                data-testid="workspace-code"
+                className="m-0 font-[var(--font-mono)] text-[12px] leading-[1.55]"
+                style={{ color: 'var(--color-code-fg)', background: 'transparent' }}
+              >
+                {tokens.map((line, index) => {
+                  const { key: lineKey, ...lineProps } = getLineProps({ line, key: index })
+                  const lineNumber = index + 1
+                  return (
+                    <div key={String(lineKey)}>
+                      <div
+                        {...lineProps}
+                        className="group grid grid-cols-[48px_minmax(0,1fr)] gap-3 px-3 hover:bg-[var(--color-surface-hover)]"
+                      >
+                        {renderLineNumberButton(lineNumber)}
+                        <span className="whitespace-pre pr-6">
+                          {line.length === 1 && line[0]?.empty ? ' ' : line.map((token, tokenIndex) => {
+                            const { key: tokenKey, ...tokenProps } = getTokenProps({ token, key: tokenIndex })
+                            return <span key={String(tokenKey)} {...tokenProps} />
+                          })}
+                        </span>
+                      </div>
+                      {renderLineCommentEditor(lineNumber)}
+                    </div>
+                  )
+                })}
+              </pre>
+            )}
+          </Highlight>
+        )}
+        {lines.length > WORKSPACE_PREVIEW_LINE_LIMIT && (
+          <div className="sticky bottom-0 flex items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface-glass)] px-3 py-2 text-xs text-[var(--color-text-tertiary)] backdrop-blur">
+            <span>
+              {showAllLines
+                ? t('workspace.previewAllLines', { total: lines.length })
+                : t('workspace.previewLineLimit', { count: visibleLines.length, total: lines.length })}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowAllLines((current) => !current)}
+              className="ml-auto rounded-[6px] px-2 py-1 text-[12px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
+            >
+              {showAllLines ? t('workspace.collapsePreview') : t('workspace.showAllLoadedLines')}
+            </button>
           </div>
         )}
       </div>
@@ -651,6 +703,12 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
   const closePreviewTabs = useWorkspacePanelStore((state) => state.closePreviewTabs)
   const closePanel = useWorkspacePanelStore((state) => state.closePanel)
   const addWorkspaceReference = useWorkspaceChatContextStore((state) => state.addReference)
+  const chatState = useChatStore((state) => state.sessions[sessionId]?.chatState ?? 'idle')
+  const refreshLifecycleRef = useRef({
+    sessionId,
+    isOpen: false,
+    chatState: 'idle',
+  })
 
   const rootTree = treeByPath['']
   const rootTreeKey = makeTreeStateKey(sessionId, '')
@@ -682,9 +740,22 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
   )
 
   useEffect(() => {
-    if (!isOpen || activeView !== 'changed' || status || statusLoading || statusError) return
+    const previous = refreshLifecycleRef.current
+    const sessionChanged = previous.sessionId !== sessionId
+    const opened = isOpen && (sessionChanged || !previous.isOpen)
+    const completedTurn =
+      isOpen &&
+      !sessionChanged &&
+      previous.chatState !== 'idle' &&
+      chatState === 'idle'
+
+    refreshLifecycleRef.current = { sessionId, isOpen, chatState }
+
+    const shouldRefreshOnOpen = opened
+    const shouldRefreshAfterCompletedTurn = completedTurn && chatState === 'idle'
+    if ((!shouldRefreshOnOpen && !shouldRefreshAfterCompletedTurn) || statusLoading) return
     void loadStatus(sessionId)
-  }, [activeView, isOpen, loadStatus, sessionId, status, statusError, statusLoading])
+  }, [chatState, isOpen, loadStatus, sessionId, statusLoading])
 
   useEffect(() => {
     if (!isOpen || activeView !== 'all' || rootTree || rootTreeLoading || rootTreeError) return

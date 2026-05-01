@@ -1,6 +1,6 @@
 import { useRef, useEffect, useMemo, memo, useState, useCallback } from 'react'
 import { ApiError } from '../../api/client'
-import { sessionsApi, type SessionRewindResponse } from '../../api/sessions'
+import { sessionsApi, type SessionTurnCheckpoint } from '../../api/sessions'
 import { useChatStore } from '../../stores/chatStore'
 import { useTabStore } from '../../stores/tabStore'
 import { useTeamStore } from '../../stores/teamStore'
@@ -42,10 +42,11 @@ type RewindTurnTarget = {
   attachments?: Extract<UIMessage, { type: 'user_text' }>['attachments']
 }
 
-type CurrentTurnPreview = {
+type TurnChangeCardModel = {
   target: RewindTurnTarget
-  preview: SessionRewindResponse
+  checkpoint: SessionTurnCheckpoint
   workDir: string | null
+  isLatest: boolean
 }
 
 function appendChildToolCall(
@@ -118,40 +119,117 @@ export function buildRenderModel(messages: UIMessage[]): RenderModel {
   return { renderItems: items, toolResultMap, childToolCallsByParent }
 }
 
-export function getLatestCompletedTurnTarget(messages: UIMessage[]): RewindTurnTarget | null {
-  let userMessageIndex = -1
-  let latestTarget: (RewindTurnTarget & { messageOffset: number }) | null = null
+function isTurnResponseMessage(message: UIMessage) {
+  return (
+    message.type === 'assistant_text' ||
+    message.type === 'tool_use' ||
+    message.type === 'tool_result' ||
+    message.type === 'error' ||
+    message.type === 'task_summary'
+  )
+}
 
-  for (let messageOffset = 0; messageOffset < messages.length; messageOffset += 1) {
-    const message = messages[messageOffset]
-    if (!message || message.type !== 'user_text' || message.pending) continue
-    userMessageIndex += 1
-    latestTarget = {
-      messageId: message.id,
-      userMessageIndex,
-      content: message.content,
-      expectedContent: message.modelContent ?? message.content,
-      attachments: message.attachments,
-      messageOffset,
+export function getCompletedTurnTargets(messages: UIMessage[]): RewindTurnTarget[] {
+  let userMessageIndex = -1
+  const completedTurns: RewindTurnTarget[] = []
+  let currentTarget: RewindTurnTarget | null = null
+  let hasResponseForCurrentTarget = false
+
+  for (const message of messages) {
+    if (message.type === 'user_text' && !message.pending) {
+      if (currentTarget && hasResponseForCurrentTarget) {
+        completedTurns.push(currentTarget)
+      }
+      userMessageIndex += 1
+      currentTarget = {
+        messageId: message.id,
+        userMessageIndex,
+        content: message.content,
+        expectedContent: message.modelContent ?? message.content,
+        attachments: message.attachments,
+      }
+      hasResponseForCurrentTarget = false
+      continue
+    }
+
+    if (currentTarget && isTurnResponseMessage(message)) {
+      hasResponseForCurrentTarget = true
     }
   }
 
-  if (!latestTarget) return null
+  if (currentTarget && hasResponseForCurrentTarget) {
+    completedTurns.push(currentTarget)
+  }
 
-  const hasResponseAfterTarget = messages
-    .slice(latestTarget.messageOffset + 1)
-    .some((message) =>
-      message.type === 'assistant_text' ||
-      message.type === 'tool_use' ||
-      message.type === 'tool_result' ||
-      message.type === 'error' ||
-      message.type === 'task_summary',
-    )
+  return completedTurns
+}
 
-  if (!hasResponseAfterTarget) return null
+export function getLatestCompletedTurnTarget(messages: UIMessage[]): RewindTurnTarget | null {
+  const completedTurns = getCompletedTurnTargets(messages)
+  return completedTurns.length > 0 ? completedTurns[completedTurns.length - 1] ?? null : null
+}
 
-  const { messageOffset: _messageOffset, ...target } = latestTarget
-  return target
+function buildTurnCardInsertionMap(
+  renderItems: RenderItem[],
+  turnChangeCards: TurnChangeCardModel[],
+) {
+  const lastResponseIndexByTurnId = new Map<string, number>()
+  let activeTurnId: string | null = null
+
+  renderItems.forEach((item, index) => {
+    if (item.kind === 'message' && item.message.type === 'user_text' && !item.message.pending) {
+      activeTurnId = item.message.id
+      return
+    }
+
+    if (activeTurnId) {
+      lastResponseIndexByTurnId.set(activeTurnId, index)
+    }
+  })
+
+  const cardsByRenderIndex = new Map<number, TurnChangeCardModel[]>()
+  turnChangeCards.forEach((card) => {
+    const renderIndex = lastResponseIndexByTurnId.get(card.target.messageId)
+    if (renderIndex === undefined) return
+    const existing = cardsByRenderIndex.get(renderIndex)
+    if (existing) {
+      existing.push(card)
+    } else {
+      cardsByRenderIndex.set(renderIndex, [card])
+    }
+  })
+
+  return cardsByRenderIndex
+}
+
+function getApiErrorMessage(error: unknown) {
+  return error instanceof ApiError
+    ? typeof error.body === 'object' && error.body && 'message' in error.body
+      ? String((error.body as { message: unknown }).message)
+      : error.message
+    : error instanceof Error
+      ? error.message
+      : String(error)
+}
+
+function isSessionTurnCheckpoint(value: unknown): value is SessionTurnCheckpoint {
+  if (!value || typeof value !== 'object') return false
+  const checkpoint = value as Partial<SessionTurnCheckpoint>
+  return (
+    Boolean(checkpoint.target) &&
+    typeof checkpoint.target?.targetUserMessageId === 'string' &&
+    typeof checkpoint.target?.userMessageIndex === 'number' &&
+    Boolean(checkpoint.code) &&
+    typeof checkpoint.code?.available === 'boolean' &&
+    Array.isArray(checkpoint.code?.filesChanged)
+  )
+}
+
+function normalizeTurnCheckpoints(response: unknown): SessionTurnCheckpoint[] {
+  if (!response || typeof response !== 'object') return []
+  const checkpoints = (response as { checkpoints?: unknown }).checkpoints
+  if (!Array.isArray(checkpoints)) return []
+  return checkpoints.filter(isSessionTurnCheckpoint)
 }
 
 type MessageListProps = {
@@ -191,11 +269,12 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
   const shouldAutoScrollRef = useRef(true)
   const lastSessionIdRef = useRef<string | null | undefined>(resolvedSessionId)
   const t = useTranslation()
-  const [currentTurnPreview, setCurrentTurnPreview] = useState<CurrentTurnPreview | null>(null)
-  const [currentTurnError, setCurrentTurnError] = useState<string | null>(null)
-  const [isLoadingCurrentTurnPreview, setIsLoadingCurrentTurnPreview] = useState(false)
-  const [isUndoingCurrentTurn, setIsUndoingCurrentTurn] = useState(false)
-  const [currentTurnUndoConfirmOpen, setCurrentTurnUndoConfirmOpen] = useState(false)
+  const [turnChangeCards, setTurnChangeCards] = useState<TurnChangeCardModel[]>([])
+  const [turnChangeLoadError, setTurnChangeLoadError] = useState<string | null>(null)
+  const [turnActionErrors, setTurnActionErrors] = useState<Record<string, string>>({})
+  const [isLoadingTurnChangeCards, setIsLoadingTurnChangeCards] = useState(false)
+  const [rewindingTurnId, setRewindingTurnId] = useState<string | null>(null)
+  const [turnUndoConfirmTargetId, setTurnUndoConfirmTargetId] = useState<string | null>(null)
 
   const updateAutoScrollState = useCallback(() => {
     const container = scrollContainerRef.current
@@ -218,76 +297,90 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
     () => buildRenderModel(messages),
     [messages],
   )
-  const latestTurnTarget = useMemo(() => getLatestCompletedTurnTarget(messages), [messages])
+  const completedTurnTargets = useMemo(() => getCompletedTurnTargets(messages), [messages])
+  const latestCompletedTurnId =
+    completedTurnTargets.length > 0
+      ? completedTurnTargets[completedTurnTargets.length - 1]?.messageId ?? null
+      : null
+  const turnCardsByRenderIndex = useMemo(
+    () => buildTurnCardInsertionMap(renderItems, turnChangeCards),
+    [renderItems, turnChangeCards],
+  )
+  const confirmTurnCard = useMemo(
+    () => turnChangeCards.find((card) => card.target.messageId === turnUndoConfirmTargetId) ?? null,
+    [turnChangeCards, turnUndoConfirmTargetId],
+  )
 
   useEffect(() => {
-    if (
-      !resolvedSessionId ||
-      !latestTurnTarget ||
-      chatState !== 'idle' ||
-      isMemberSession
-    ) {
-      setCurrentTurnPreview(null)
-      setCurrentTurnError(null)
-      setIsLoadingCurrentTurnPreview(false)
+    if (!resolvedSessionId || completedTurnTargets.length === 0 || isMemberSession) {
+      setTurnChangeCards([])
+      setTurnChangeLoadError(null)
+      setIsLoadingTurnChangeCards(false)
+      return
+    }
+
+    if (chatState !== 'idle') {
+      setTurnChangeLoadError(null)
+      setIsLoadingTurnChangeCards(false)
       return
     }
 
     let cancelled = false
-    setIsLoadingCurrentTurnPreview(true)
-    setCurrentTurnPreview(null)
-    setCurrentTurnError(null)
+    setIsLoadingTurnChangeCards(true)
+    setTurnChangeLoadError(null)
 
     Promise.all([
-      sessionsApi.rewind(resolvedSessionId, {
-        targetUserMessageId: latestTurnTarget.messageId,
-        userMessageIndex: latestTurnTarget.userMessageIndex,
-        expectedContent: latestTurnTarget.expectedContent,
-        dryRun: true,
-      }),
+      sessionsApi.getTurnCheckpoints(resolvedSessionId),
       sessionsApi.getWorkspaceStatus(resolvedSessionId).catch(() => null),
     ])
-      .then(([preview, workspaceStatus]) => {
+      .then(([checkpointResponse, workspaceStatus]) => {
         if (cancelled) return
-        if (!preview.code.available || preview.code.filesChanged.length === 0) {
-          setCurrentTurnPreview(null)
-          return
-        }
-        setCurrentTurnPreview({
-          target: latestTurnTarget,
-          preview,
-          workDir: workspaceStatus?.workDir ?? null,
-        })
+        const targetByMessageId = new Map(
+          completedTurnTargets.map((target) => [target.messageId, target] as const),
+        )
+
+        setTurnChangeCards(
+          normalizeTurnCheckpoints(checkpointResponse).flatMap((checkpoint) => {
+            const target = targetByMessageId.get(checkpoint.target.targetUserMessageId)
+            if (!target || !checkpoint.code.available || checkpoint.code.filesChanged.length === 0) {
+              return []
+            }
+            return [{
+              target,
+              checkpoint,
+              workDir: checkpoint.workDir ?? workspaceStatus?.workDir ?? null,
+              isLatest: target.messageId === latestCompletedTurnId,
+            }]
+          }),
+        )
       })
       .catch((error) => {
         if (cancelled) return
-        const message =
-          error instanceof ApiError
-            ? typeof error.body === 'object' && error.body && 'message' in error.body
-              ? String((error.body as { message: unknown }).message)
-              : error.message
-            : error instanceof Error
-              ? error.message
-              : String(error)
-        setCurrentTurnError(message)
+        setTurnChangeCards([])
+        setTurnChangeLoadError(getApiErrorMessage(error))
       })
       .finally(() => {
         if (!cancelled) {
-          setIsLoadingCurrentTurnPreview(false)
+          setIsLoadingTurnChangeCards(false)
         }
       })
 
     return () => {
       cancelled = true
     }
-  }, [chatState, isMemberSession, latestTurnTarget, resolvedSessionId])
+  }, [chatState, completedTurnTargets, isMemberSession, latestCompletedTurnId, resolvedSessionId])
 
   const handleUndoCurrentTurn = useCallback(async () => {
-    if (!resolvedSessionId || !currentTurnPreview || isUndoingCurrentTurn) return
+    if (!resolvedSessionId || !confirmTurnCard || rewindingTurnId) return
 
-    const target = currentTurnPreview.target
-    setIsUndoingCurrentTurn(true)
-    setCurrentTurnError(null)
+    const target = confirmTurnCard.target
+    setRewindingTurnId(target.messageId)
+    setTurnActionErrors((current) => {
+      if (!(target.messageId in current)) return current
+      const next = { ...current }
+      delete next[target.messageId]
+      return next
+    })
 
     try {
       if (chatState !== 'idle') {
@@ -317,30 +410,24 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
             }),
       })
 
-      setCurrentTurnPreview(null)
-      setCurrentTurnUndoConfirmOpen(false)
+      setTurnUndoConfirmTargetId(null)
     } catch (error) {
-      const message =
-        error instanceof ApiError
-          ? typeof error.body === 'object' && error.body && 'message' in error.body
-            ? String((error.body as { message: unknown }).message)
-            : error.message
-          : error instanceof Error
-            ? error.message
-            : String(error)
-      setCurrentTurnError(message)
-      setCurrentTurnUndoConfirmOpen(false)
+      setTurnActionErrors((current) => ({
+        ...current,
+        [target.messageId]: getApiErrorMessage(error),
+      }))
+      setTurnUndoConfirmTargetId(null)
     } finally {
-      setIsUndoingCurrentTurn(false)
+      setRewindingTurnId(null)
     }
   }, [
     addToast,
     chatState,
-    currentTurnPreview,
-    isUndoingCurrentTurn,
+    confirmTurnCard,
     queueComposerPrefill,
     reloadHistory,
     resolvedSessionId,
+    rewindingTurnId,
     stopGeneration,
     t,
   ])
@@ -352,39 +439,54 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
       className={`flex-1 overflow-y-auto ${compact ? 'px-3 py-3 pb-5' : 'px-4 py-4'}`}
     >
       <div className={compact ? 'mx-auto max-w-full' : 'mx-auto max-w-[860px]'}>
-        {renderItems.map((item) => {
-          if (item.kind === 'tool_group') {
-            return (
-              <ToolCallGroup
-                key={item.id}
-                toolCalls={item.toolCalls}
-                resultMap={toolResultMap}
-                childToolCallsByParent={childToolCallsByParent}
-                agentTaskNotifications={agentTaskNotifications}
-                isStreaming={
-                  chatState === 'tool_executing' &&
-                  item.toolCalls.some((tc) => !toolResultMap.has(tc.toolUseId))
-                }
-              />
-            )
-          }
+        {renderItems.map((item, index) => {
+          const cardsForItem = turnCardsByRenderIndex.get(index) ?? []
 
-          const msg = item.message
           return (
-            <MessageBlock
-              key={msg.id}
-              message={msg}
-              activeThinkingId={activeThinkingId}
-              agentTaskNotifications={agentTaskNotifications}
-              toolResult={
-                msg.type === 'tool_use'
-                  ? (() => {
-                      const r = toolResultMap.get(msg.toolUseId)
-                      return r ? { content: r.content, isError: r.isError } : null
-                    })()
-                  : null
-              }
-            />
+            <div key={item.kind === 'tool_group' ? item.id : item.message.id}>
+              {item.kind === 'tool_group' ? (
+                <ToolCallGroup
+                  toolCalls={item.toolCalls}
+                  resultMap={toolResultMap}
+                  childToolCallsByParent={childToolCallsByParent}
+                  agentTaskNotifications={agentTaskNotifications}
+                  isStreaming={
+                    chatState === 'tool_executing' &&
+                    item.toolCalls.some((tc) => !toolResultMap.has(tc.toolUseId))
+                  }
+                />
+              ) : (
+                <MessageBlock
+                  message={item.message}
+                  activeThinkingId={activeThinkingId}
+                  agentTaskNotifications={agentTaskNotifications}
+                  toolResult={
+                    item.message.type === 'tool_use'
+                      ? (() => {
+                          const result = toolResultMap.get(item.message.toolUseId)
+                          return result ? { content: result.content, isError: result.isError } : null
+                        })()
+                      : null
+                  }
+                />
+              )}
+
+              {resolvedSessionId && cardsForItem.map((card) => (
+                <CurrentTurnChangeCard
+                  key={`turn-change-${card.target.messageId}`}
+                  sessionId={resolvedSessionId}
+                  targetUserMessageId={card.target.messageId}
+                  checkpoint={card.checkpoint}
+                  workDir={card.workDir}
+                  error={turnActionErrors[card.target.messageId] ?? null}
+                  isUndoing={rewindingTurnId === card.target.messageId}
+                  isLatest={card.isLatest}
+                  onUndo={() => {
+                    setTurnUndoConfirmTargetId(card.target.messageId)
+                  }}
+                />
+              ))}
+            </div>
           )
         })}
 
@@ -400,22 +502,9 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
           <StreamingIndicator />
         )}
 
-        {!isLoadingCurrentTurnPreview && currentTurnPreview && resolvedSessionId && (
-          <CurrentTurnChangeCard
-            sessionId={resolvedSessionId}
-            preview={currentTurnPreview.preview}
-            workDir={currentTurnPreview.workDir}
-            error={currentTurnError}
-            isUndoing={isUndoingCurrentTurn}
-            onUndo={() => {
-              setCurrentTurnUndoConfirmOpen(true)
-            }}
-          />
-        )}
-
-        {!currentTurnPreview && currentTurnError && (
+        {!isLoadingTurnChangeCards && turnChangeCards.length === 0 && turnChangeLoadError && (
           <div className="mx-auto mb-5 w-full max-w-[860px] rounded-[var(--radius-lg)] border border-[var(--color-error)]/25 bg-[var(--color-error-container)]/18 px-4 py-3 text-xs text-[var(--color-error)]">
-            {currentTurnError}
+            {turnChangeLoadError}
           </div>
         )}
 
@@ -423,19 +512,25 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
       </div>
 
       <ConfirmDialog
-        open={currentTurnUndoConfirmOpen}
+        open={Boolean(confirmTurnCard)}
         onClose={() => {
-          if (!isUndoingCurrentTurn) {
-            setCurrentTurnUndoConfirmOpen(false)
+          if (!rewindingTurnId) {
+            setTurnUndoConfirmTargetId(null)
           }
         }}
         onConfirm={handleUndoCurrentTurn}
-        title={t('chat.turnChangesConfirmTitle')}
-        body={t('chat.turnChangesConfirmBody')}
-        confirmLabel={t('chat.turnChangesConfirmUndo')}
+        title={confirmTurnCard?.isLatest
+          ? t('chat.turnChangesLatestConfirmTitle')
+          : t('chat.turnChangesHistoricalConfirmTitle')}
+        body={confirmTurnCard?.isLatest
+          ? t('chat.turnChangesLatestConfirmBody')
+          : t('chat.turnChangesHistoricalConfirmBody')}
+        confirmLabel={confirmTurnCard?.isLatest
+          ? t('chat.turnChangesLatestConfirmUndo')
+          : t('chat.turnChangesHistoricalConfirmUndo')}
         cancelLabel={t('common.cancel')}
         confirmVariant="danger"
-        loading={isUndoingCurrentTurn}
+        loading={Boolean(rewindingTurnId)}
       />
     </div>
   )

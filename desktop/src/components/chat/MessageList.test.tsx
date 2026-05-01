@@ -39,6 +39,17 @@ describe('MessageList nested tool calls', () => {
     useSettingsStore.setState({ locale: 'en' })
     useTabStore.setState({ activeTabId: ACTIVE_TAB, tabs: [{ sessionId: ACTIVE_TAB, title: 'Test', type: 'session' as const, status: 'idle' }] })
     useChatStore.setState({ sessions: { [ACTIVE_TAB]: makeSessionState() } })
+    vi.spyOn(sessionsApi, 'getTurnCheckpoints').mockImplementation(
+      () => new Promise(() => {}),
+    )
+    vi.spyOn(sessionsApi, 'getWorkspaceStatus').mockResolvedValue({
+      state: 'ok',
+      workDir: '/tmp/example-project',
+      repoName: 'example-project',
+      branch: null,
+      isGitRepo: false,
+      changedFiles: [],
+    })
   })
 
   it('renders sub-agent tool calls inline beneath the parent agent tool call', () => {
@@ -564,29 +575,22 @@ describe('MessageList nested tool calls', () => {
   })
 
   it('does not expose the old message-level rewind action', async () => {
-    vi.spyOn(sessionsApi, 'rewind').mockResolvedValue({
-      target: {
-        targetUserMessageId: 'user-1',
-        userMessageIndex: 0,
-        userMessageCount: 1,
-      },
-      conversation: {
-        messagesRemoved: 2,
-      },
-      code: {
-        available: true,
-        filesChanged: ['src/App.tsx'],
-        insertions: 4,
-        deletions: 1,
-      },
-    })
-    vi.spyOn(sessionsApi, 'getWorkspaceStatus').mockResolvedValue({
-      state: 'ok',
-      workDir: '/tmp/example-project',
-      repoName: 'example-project',
-      branch: null,
-      isGitRepo: false,
-      changedFiles: [],
+    vi.spyOn(sessionsApi, 'getTurnCheckpoints').mockResolvedValue({
+      checkpoints: [
+        {
+          target: {
+            targetUserMessageId: 'user-1',
+            userMessageIndex: 0,
+            userMessageCount: 1,
+          },
+          code: {
+            available: true,
+            filesChanged: ['src/App.tsx'],
+            insertions: 4,
+            deletions: 1,
+          },
+        },
+      ],
     })
 
     useChatStore.setState({
@@ -616,30 +620,83 @@ describe('MessageList nested tool calls', () => {
     expect(screen.queryByRole('button', { name: 'Rewind to here' })).toBeNull()
   })
 
-  it('shows a current-turn change card from checkpoint preview', async () => {
-    vi.spyOn(sessionsApi, 'rewind').mockResolvedValue({
-      target: {
-        targetUserMessageId: 'user-2',
-        userMessageIndex: 1,
-        userMessageCount: 2,
-      },
-      conversation: {
-        messagesRemoved: 2,
-      },
-      code: {
-        available: true,
-        filesChanged: ['src/App.tsx', 'src/lib/api.ts'],
-        insertions: 12,
-        deletions: 4,
+  it('keeps historical sessions readable when turn checkpoint payloads are missing', async () => {
+    vi.spyOn(sessionsApi, 'getTurnCheckpoints').mockResolvedValue({} as never)
+
+    useChatStore.setState({
+      sessions: {
+        [ACTIVE_TAB]: makeSessionState({
+          messages: [
+            {
+              id: 'user-1',
+              type: 'user_text',
+              content: '继续优化 workflow.py',
+              timestamp: 1,
+            },
+            {
+              id: 'assistant-1',
+              type: 'assistant_text',
+              content: '两个文件均已优化完成，功能保持不变。',
+              timestamp: 2,
+            },
+          ],
+        }),
       },
     })
-    vi.spyOn(sessionsApi, 'getWorkspaceStatus').mockResolvedValue({
-      state: 'ok',
-      workDir: '/tmp/example-project',
-      repoName: 'example-project',
-      branch: null,
-      isGitRepo: false,
-      changedFiles: [],
+
+    render(<MessageList />)
+
+    expect(await screen.findByText('两个文件均已优化完成，功能保持不变。')).toBeTruthy()
+    await waitFor(() => {
+      expect(sessionsApi.getTurnCheckpoints).toHaveBeenCalled()
+    })
+    expect(screen.queryByText(/Cannot read properties/)).toBeNull()
+    expect(screen.queryByLabelText('Turn changed files')).toBeNull()
+  })
+
+  it('renders multiple historical turn change cards across three turns', async () => {
+    vi.spyOn(sessionsApi, 'getTurnCheckpoints').mockResolvedValue({
+      checkpoints: [
+        {
+          target: {
+            targetUserMessageId: 'user-1',
+            userMessageIndex: 0,
+            userMessageCount: 3,
+          },
+          code: {
+            available: true,
+            filesChanged: ['src/first.ts'],
+            insertions: 3,
+            deletions: 1,
+          },
+        },
+        {
+          target: {
+            targetUserMessageId: 'user-2',
+            userMessageIndex: 1,
+            userMessageCount: 3,
+          },
+          code: {
+            available: true,
+            filesChanged: ['src/second.ts'],
+            insertions: 5,
+            deletions: 2,
+          },
+        },
+        {
+          target: {
+            targetUserMessageId: 'user-3',
+            userMessageIndex: 2,
+            userMessageCount: 3,
+          },
+          code: {
+            available: true,
+            filesChanged: [],
+            insertions: 0,
+            deletions: 0,
+          },
+        },
+      ],
     })
 
     useChatStore.setState({
@@ -662,7 +719,102 @@ describe('MessageList nested tool calls', () => {
               id: 'user-2',
               type: 'user_text',
               content: '第二段',
-              modelContent: '@"/tmp/example-project/src/App.tsx" 第二段',
+              timestamp: 3,
+            },
+            {
+              id: 'assistant-2',
+              type: 'assistant_text',
+              content: 'done',
+              timestamp: 4,
+            },
+            {
+              id: 'user-3',
+              type: 'user_text',
+              content: '第三段',
+              timestamp: 5,
+            },
+            {
+              id: 'assistant-3',
+              type: 'assistant_text',
+              content: 'done',
+              timestamp: 6,
+            },
+          ],
+        }),
+      },
+    })
+
+    render(<MessageList />)
+
+    const cards = await screen.findAllByLabelText('Turn changed files')
+    expect(cards).toHaveLength(2)
+    expect(screen.getByText('src/first.ts')).toBeTruthy()
+    expect(screen.getByText('src/second.ts')).toBeTruthy()
+    expect(screen.queryByText('src/third.ts')).toBeNull()
+  })
+
+  it('expands a historical turn diff through the turn checkpoint diff API', async () => {
+    vi.spyOn(sessionsApi, 'getTurnCheckpoints').mockResolvedValue({
+      checkpoints: [
+        {
+          target: {
+            targetUserMessageId: 'user-1',
+            userMessageIndex: 0,
+            userMessageCount: 2,
+          },
+          code: {
+            available: true,
+            filesChanged: ['src/first.ts'],
+            insertions: 1,
+            deletions: 1,
+          },
+        },
+        {
+          target: {
+            targetUserMessageId: 'user-2',
+            userMessageIndex: 1,
+            userMessageCount: 2,
+          },
+          code: {
+            available: true,
+            filesChanged: ['src/second.ts'],
+            insertions: 2,
+            deletions: 0,
+          },
+        },
+      ],
+    })
+    vi.spyOn(sessionsApi, 'getWorkspaceDiff').mockResolvedValue({
+      state: 'ok',
+      path: 'src/first.ts',
+      diff: 'diff --session a/src/first.ts b/src/first.ts\n-old\n+new',
+    })
+    vi.spyOn(sessionsApi, 'getTurnCheckpointDiff').mockResolvedValue({
+      state: 'ok',
+      path: 'src/first.ts',
+      diff: 'diff --session a/src/first.ts b/src/first.ts\n-old\n+new',
+    })
+
+    useChatStore.setState({
+      sessions: {
+        [ACTIVE_TAB]: makeSessionState({
+          messages: [
+            {
+              id: 'user-1',
+              type: 'user_text',
+              content: '第一轮',
+              timestamp: 1,
+            },
+            {
+              id: 'assistant-1',
+              type: 'assistant_text',
+              content: 'done',
+              timestamp: 2,
+            },
+            {
+              id: 'user-2',
+              type: 'user_text',
+              content: '第二轮',
               timestamp: 3,
             },
             {
@@ -678,49 +830,49 @@ describe('MessageList nested tool calls', () => {
 
     render(<MessageList />)
 
-    expect(await screen.findByText('2 files changed')).toBeTruthy()
-    expect(screen.getByLabelText('Current turn changed files').className).toContain('w-full max-w-[860px]')
-    expect(screen.getByText('+12')).toBeTruthy()
-    expect(screen.getByText('-4')).toBeTruthy()
-    expect(screen.getByText('src/App.tsx')).toBeTruthy()
-    expect(screen.getByText('src/lib/api.ts')).toBeTruthy()
-    expect(sessionsApi.rewind).toHaveBeenCalledWith(ACTIVE_TAB, {
-      targetUserMessageId: 'user-2',
-      userMessageIndex: 1,
-      expectedContent: '@"/tmp/example-project/src/App.tsx" 第二段',
-      dryRun: true,
-    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Show diff for src/first.ts' }))
+
+    const diffSurface = await screen.findByTestId('workspace-code')
+    expect(diffSurface.textContent).toContain('+new')
+    expect(sessionsApi.getTurnCheckpointDiff).toHaveBeenCalledWith(
+      ACTIVE_TAB,
+      'user-1',
+      'src/first.ts',
+    )
+    expect(sessionsApi.getWorkspaceDiff).not.toHaveBeenCalled()
   })
 
-  it('expands a current-turn changed file diff', async () => {
-    vi.spyOn(sessionsApi, 'rewind').mockResolvedValue({
-      target: {
-        targetUserMessageId: 'user-1',
-        userMessageIndex: 0,
-        userMessageCount: 1,
-      },
-      conversation: {
-        messagesRemoved: 2,
-      },
-      code: {
-        available: true,
-        filesChanged: ['src/App.tsx'],
-        insertions: 1,
-        deletions: 1,
-      },
-    })
+  it('keeps checkpoint paths bound to the original turn cwd when expanding historical diffs', async () => {
     vi.spyOn(sessionsApi, 'getWorkspaceStatus').mockResolvedValue({
       state: 'ok',
-      workDir: '/tmp/example-project',
-      repoName: 'example-project',
+      workDir: '/tmp/current-project',
+      repoName: 'current-project',
       branch: null,
       isGitRepo: false,
       changedFiles: [],
     })
-    vi.spyOn(sessionsApi, 'getWorkspaceDiff').mockResolvedValue({
+    vi.spyOn(sessionsApi, 'getTurnCheckpoints').mockResolvedValue({
+      checkpoints: [
+        {
+          target: {
+            targetUserMessageId: 'user-1',
+            userMessageIndex: 0,
+            userMessageCount: 2,
+          },
+          workDir: '/tmp/old-project',
+          code: {
+            available: true,
+            filesChanged: ['/tmp/old-project/src/first.ts'],
+            insertions: 1,
+            deletions: 1,
+          },
+        },
+      ],
+    })
+    vi.spyOn(sessionsApi, 'getTurnCheckpointDiff').mockResolvedValue({
       state: 'ok',
-      path: 'src/App.tsx',
-      diff: 'diff --session a/src/App.tsx b/src/App.tsx\n-old\n+new',
+      path: '/tmp/old-project/src/first.ts',
+      diff: 'diff --git a/src/first.ts b/src/first.ts\n-old\n+new',
     })
 
     useChatStore.setState({
@@ -730,7 +882,7 @@ describe('MessageList nested tool calls', () => {
             {
               id: 'user-1',
               type: 'user_text',
-              content: '改一下',
+              content: '第一轮',
               timestamp: 1,
             },
             {
@@ -746,14 +898,107 @@ describe('MessageList nested tool calls', () => {
 
     render(<MessageList />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Show diff for src/App.tsx' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Show diff for src/first.ts' }))
 
-    const diffSurface = await screen.findByTestId('workspace-code')
-    expect(diffSurface.textContent).toContain('+new')
-    expect(sessionsApi.getWorkspaceDiff).toHaveBeenCalledWith(ACTIVE_TAB, 'src/App.tsx')
+    await screen.findByTestId('workspace-code')
+    expect(sessionsApi.getTurnCheckpointDiff).toHaveBeenCalledWith(
+      ACTIVE_TAB,
+      'user-1',
+      '/tmp/old-project/src/first.ts',
+    )
   })
 
-  it('confirms before undoing the current turn from the change card', async () => {
+  it('keeps historical turn change cards visible while the next turn is running', async () => {
+    vi.spyOn(sessionsApi, 'getTurnCheckpoints').mockResolvedValue({
+      checkpoints: [
+        {
+          target: {
+            targetUserMessageId: 'user-1',
+            userMessageIndex: 0,
+            userMessageCount: 1,
+          },
+          code: {
+            available: true,
+            filesChanged: ['src/first.ts'],
+            insertions: 1,
+            deletions: 0,
+          },
+        },
+      ],
+    })
+
+    const messages: UIMessage[] = [
+      {
+        id: 'user-1',
+        type: 'user_text',
+        content: '第一轮',
+        timestamp: 1,
+      },
+      {
+        id: 'assistant-1',
+        type: 'assistant_text',
+        content: 'done',
+        timestamp: 2,
+      },
+    ]
+
+    useChatStore.setState({
+      sessions: {
+        [ACTIVE_TAB]: makeSessionState({ messages }),
+      },
+    })
+
+    render(<MessageList />)
+
+    expect(await screen.findByText('src/first.ts')).toBeTruthy()
+
+    act(() => {
+      useChatStore.setState({
+        sessions: {
+          [ACTIVE_TAB]: makeSessionState({
+            messages,
+            chatState: 'thinking',
+          }),
+        },
+      })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('src/first.ts')).toBeTruthy()
+    })
+  })
+
+  it('confirms before rewinding to an earlier turn from a historical change card', async () => {
+    vi.spyOn(sessionsApi, 'getTurnCheckpoints').mockResolvedValue({
+      checkpoints: [
+        {
+          target: {
+            targetUserMessageId: 'user-1',
+            userMessageIndex: 0,
+            userMessageCount: 2,
+          },
+          code: {
+            available: true,
+            filesChanged: ['src/first.ts'],
+            insertions: 1,
+            deletions: 0,
+          },
+        },
+        {
+          target: {
+            targetUserMessageId: 'user-2',
+            userMessageIndex: 1,
+            userMessageCount: 2,
+          },
+          code: {
+            available: true,
+            filesChanged: ['src/second.ts'],
+            insertions: 1,
+            deletions: 0,
+          },
+        },
+      ],
+    })
     vi.spyOn(sessionsApi, 'rewind')
       .mockResolvedValueOnce({
         target: {
@@ -788,14 +1033,6 @@ describe('MessageList nested tool calls', () => {
           deletions: 0,
         },
       })
-    vi.spyOn(sessionsApi, 'getWorkspaceStatus').mockResolvedValue({
-      state: 'ok',
-      workDir: '/tmp/example-project',
-      repoName: 'example-project',
-      branch: null,
-      isGitRepo: false,
-      changedFiles: [],
-    })
     const reloadHistory = vi.fn().mockResolvedValue(undefined)
     const queueComposerPrefill = vi.fn()
 
@@ -809,99 +1046,6 @@ describe('MessageList nested tool calls', () => {
               id: 'user-1',
               type: 'user_text',
               content: '做一个页面',
-              timestamp: 1,
-            },
-            {
-              id: 'assistant-1',
-              type: 'assistant_text',
-              content: 'done',
-              timestamp: 2,
-            },
-          ],
-        }),
-      },
-    })
-
-    render(<MessageList />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Undo current turn changes' }))
-
-    expect(sessionsApi.rewind).toHaveBeenCalledTimes(1)
-    const dialog = await screen.findByRole('dialog', { name: 'Undo current turn?' })
-    expect(within(dialog).getByText('This will rewind the latest assistant response and restore tracked files for this turn.')).toBeTruthy()
-
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Undo current turn' }))
-
-    await waitFor(() => {
-      expect(sessionsApi.rewind).toHaveBeenLastCalledWith(ACTIVE_TAB, {
-        targetUserMessageId: 'user-1',
-        userMessageIndex: 0,
-        expectedContent: '做一个页面',
-      })
-    })
-    expect(reloadHistory).toHaveBeenCalledWith(ACTIVE_TAB)
-    expect(queueComposerPrefill).toHaveBeenCalledWith(ACTIVE_TAB, {
-      text: '做一个页面',
-      attachments: undefined,
-    })
-  })
-
-  it('undoes only the latest completed turn when earlier turns also changed files', async () => {
-    vi.spyOn(sessionsApi, 'rewind')
-      .mockResolvedValueOnce({
-        target: {
-          targetUserMessageId: 'user-2',
-          userMessageIndex: 1,
-          userMessageCount: 2,
-        },
-        conversation: {
-          messagesRemoved: 2,
-        },
-        code: {
-          available: true,
-          filesChanged: ['src/second.ts'],
-          insertions: 7,
-          deletions: 2,
-        },
-      })
-      .mockResolvedValueOnce({
-        target: {
-          targetUserMessageId: 'user-2',
-          userMessageIndex: 1,
-          userMessageCount: 2,
-        },
-        conversation: {
-          messagesRemoved: 2,
-          removedMessageIds: ['user-2', 'assistant-2'],
-        },
-        code: {
-          available: true,
-          filesChanged: ['src/second.ts'],
-          insertions: 7,
-          deletions: 2,
-        },
-      })
-    vi.spyOn(sessionsApi, 'getWorkspaceStatus').mockResolvedValue({
-      state: 'ok',
-      workDir: '/tmp/example-project',
-      repoName: 'example-project',
-      branch: null,
-      isGitRepo: false,
-      changedFiles: [],
-    })
-    const reloadHistory = vi.fn().mockResolvedValue(undefined)
-    const queueComposerPrefill = vi.fn()
-
-    useChatStore.setState({
-      reloadHistory,
-      queueComposerPrefill,
-      sessions: {
-        [ACTIVE_TAB]: makeSessionState({
-          messages: [
-            {
-              id: 'user-1',
-              type: 'user_text',
-              content: '第一轮需求',
               timestamp: 1,
             },
             {
@@ -929,49 +1073,68 @@ describe('MessageList nested tool calls', () => {
 
     render(<MessageList />)
 
-    expect(await screen.findByText('1 files changed')).toBeTruthy()
-    expect(screen.getByText('src/second.ts')).toBeTruthy()
-    expect(sessionsApi.rewind).toHaveBeenCalledWith(ACTIVE_TAB, {
-      targetUserMessageId: 'user-2',
-      userMessageIndex: 1,
-      expectedContent: '第二轮需求',
-      dryRun: true,
-    })
+    const historicalCard = (await screen.findByText('src/first.ts')).closest('section')
+    expect(historicalCard).toBeTruthy()
+    fireEvent.click(
+      within(historicalCard as HTMLElement).getByRole('button', {
+        name: 'Rewind to before this turn',
+      }),
+    )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Undo current turn changes' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Undo current turn?' })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Undo current turn' }))
+    expect(sessionsApi.rewind).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('dialog', { name: 'Rewind to before this turn?' })
+    expect(
+      within(dialog).getByText(
+        'This will rewind the conversation to before this turn and restore tracked files for that checkpoint.',
+      ),
+    ).toBeTruthy()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Rewind to before this turn' }))
 
     await waitFor(() => {
       expect(sessionsApi.rewind).toHaveBeenLastCalledWith(ACTIVE_TAB, {
-        targetUserMessageId: 'user-2',
-        userMessageIndex: 1,
-        expectedContent: '第二轮需求',
+        targetUserMessageId: 'user-1',
+        userMessageIndex: 0,
+        expectedContent: '做一个页面',
       })
     })
     expect(reloadHistory).toHaveBeenCalledWith(ACTIVE_TAB)
     expect(queueComposerPrefill).toHaveBeenCalledWith(ACTIVE_TAB, {
-      text: '第二轮需求',
+      text: '做一个页面',
       attachments: undefined,
     })
   })
 
-  it('does not show a stale current-turn change card when the latest completed turn has no files', async () => {
-    vi.spyOn(sessionsApi, 'rewind').mockResolvedValue({
-      target: {
-        targetUserMessageId: 'user-2',
-        userMessageIndex: 1,
-        userMessageCount: 2,
-      },
-      conversation: {
-        messagesRemoved: 2,
-      },
-      code: {
-        available: true,
-        filesChanged: [],
-        insertions: 0,
-        deletions: 0,
-      },
+  it('does not render cards for turns without file changes', async () => {
+    vi.spyOn(sessionsApi, 'getTurnCheckpoints').mockResolvedValue({
+      checkpoints: [
+        {
+          target: {
+            targetUserMessageId: 'user-1',
+            userMessageIndex: 0,
+            userMessageCount: 2,
+          },
+          code: {
+            available: true,
+            filesChanged: ['src/first.ts'],
+            insertions: 2,
+            deletions: 1,
+          },
+        },
+        {
+          target: {
+            targetUserMessageId: 'user-2',
+            userMessageIndex: 1,
+            userMessageCount: 2,
+          },
+          code: {
+            available: true,
+            filesChanged: [],
+            insertions: 0,
+            deletions: 0,
+          },
+        },
+      ],
     })
 
     useChatStore.setState({
@@ -1009,15 +1172,10 @@ describe('MessageList nested tool calls', () => {
 
     render(<MessageList />)
 
-    await waitFor(() => {
-      expect(sessionsApi.rewind).toHaveBeenCalledWith(ACTIVE_TAB, {
-        targetUserMessageId: 'user-2',
-        userMessageIndex: 1,
-        expectedContent: '第二轮只解释',
-        dryRun: true,
-      })
-    })
-    expect(screen.queryByLabelText('Current turn changed files')).toBeNull()
+    const cards = await screen.findAllByLabelText('Turn changed files')
+    expect(cards).toHaveLength(1)
+    expect(screen.getByText('src/first.ts')).toBeTruthy()
+    expect(screen.queryByText('src/second.ts')).toBeNull()
   })
 
   it('shows raw startup details under translated CLI startup errors', () => {

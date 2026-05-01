@@ -312,7 +312,7 @@ describe('chatStore history mapping', () => {
       {
         type: 'user_text',
         content: '改这里',
-        modelContent: 'Notes for attached workspace files:\n- src/App.tsx:L4\n  Comment: tighten this',
+        modelContent: '@"/repo/src/App.tsx" Notes for attached workspace files:\n- src/App.tsx:L4\n  Comment: tighten this',
         attachments: [{
           type: 'file',
           name: 'App.tsx',
@@ -340,6 +340,54 @@ describe('chatStore history mapping', () => {
         }],
       },
     )
+  })
+
+  it('stores server-materialized attachment prefixes for rewind matching', () => {
+    useChatStore.setState({
+      sessions: {
+        [TEST_SESSION_ID]: {
+          messages: [],
+          chatState: 'idle',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: null,
+          pendingComputerUsePermission: null,
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          agentTaskNotifications: {},
+          elapsedTimer: null,
+        },
+      },
+    })
+
+    useChatStore.getState().sendMessage(
+      TEST_SESSION_ID,
+      '记一下这个文件讲了什么东西。',
+      [{ type: 'file', name: 'conditions.py', path: '/repo/backend/conditions.py' }],
+      {
+        displayContent: '记一下这个文件讲了什么东西。',
+        displayAttachments: [{ type: 'file', name: 'conditions.py', path: 'backend/conditions.py' }],
+      },
+    )
+
+    expect(useChatStore.getState().sessions[TEST_SESSION_ID]?.messages).toMatchObject([
+      {
+        type: 'user_text',
+        content: '记一下这个文件讲了什么东西。',
+        modelContent: '@"/repo/backend/conditions.py" 记一下这个文件讲了什么东西。',
+        attachments: [{
+          type: 'file',
+          name: 'conditions.py',
+          path: 'backend/conditions.py',
+        }],
+      },
+    ])
   })
 
   it('keeps parent tool linkage for live tool events', () => {

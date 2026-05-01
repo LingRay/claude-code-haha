@@ -18,9 +18,14 @@ type Props = {
   cwd: string
   filter?: string
   onSelect: (path: string, relativePath: string) => void
+  onNavigate?: (relativePath: string) => void
 }
 
-export const FileSearchMenu = forwardRef<FileSearchMenuHandle, Props>(({ cwd, filter = '', onSelect }, ref) => {
+function joinRelativePath(base: string, name: string) {
+  return [base.replace(/\/+$/, ''), name].filter(Boolean).join('/')
+}
+
+export const FileSearchMenu = forwardRef<FileSearchMenuHandle, Props>(({ cwd, filter = '', onSelect, onNavigate }, ref) => {
   const t = useTranslation()
   const [entries, setEntries] = useState<DirEntry[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -118,13 +123,19 @@ export const FileSearchMenu = forwardRef<FileSearchMenuHandle, Props>(({ cwd, fi
     }
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault()
-      if (entries[selectedIndex]) {
-        onSelect(entries[selectedIndex]!.path, entries[selectedIndex]!.name)
+      const selected = entries[selectedIndex]
+      if (selected) {
+        if (selected.isDirectory) {
+          void loadDir(selected.path, '')
+          onNavigate?.(`${joinRelativePath(filter.slice(0, filter.lastIndexOf('/') + 1), selected.name)}/`)
+        } else {
+          onSelect(selected.path, joinRelativePath(filter.slice(0, filter.lastIndexOf('/') + 1), selected.name))
+        }
       }
       return
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries, selectedIndex])
+  }, [entries, selectedIndex, filter, loadDir, onNavigate, onSelect])
 
   useImperativeHandle(ref, () => ({ handleKeyDown }), [handleKeyDown])
 
@@ -185,7 +196,8 @@ export const FileSearchMenu = forwardRef<FileSearchMenuHandle, Props>(({ cwd, fi
                 key={entry.path}
                 data-index={i}
                 onClick={() => {
-                  void loadDir(entry.path, filter)
+                  void loadDir(entry.path, '')
+                  onNavigate?.(`${joinRelativePath(filter.slice(0, filter.lastIndexOf('/') + 1), entry.name)}/`)
                 }}
                 onMouseEnter={() => setSelectedIndex(i)}
                 className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
@@ -204,7 +216,7 @@ export const FileSearchMenu = forwardRef<FileSearchMenuHandle, Props>(({ cwd, fi
                 <button
                   key={entry.path}
                   data-index={idx}
-                  onClick={() => onSelect(entry.path, entry.name)}
+                  onClick={() => onSelect(entry.path, joinRelativePath(filter.slice(0, filter.lastIndexOf('/') + 1), entry.name))}
                   onMouseEnter={() => setSelectedIndex(idx)}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
                     selectedIndex === idx ? 'bg-[var(--color-surface-hover)]' : 'hover:bg-[var(--color-surface-hover)]'

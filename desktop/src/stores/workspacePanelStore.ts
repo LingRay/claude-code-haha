@@ -278,18 +278,17 @@ export const useWorkspacePanelStore = create<WorkspacePanelStore>((set, get) => 
 
       set((state) => {
         const panel = getSessionPanelState(state.panelBySession, sessionId)
-        const shouldDefaultToAllFiles =
-          !panel.hasUserSelectedView
-          && panel.activeView === 'changed'
-          && result.state === 'ok'
-          && result.changedFiles.length === 0
+        const nextActiveView =
+          !panel.hasUserSelectedView && result.state === 'ok'
+            ? result.changedFiles.length > 0 ? 'changed' : 'all'
+            : panel.activeView
 
         return {
           panelBySession: {
             ...state.panelBySession,
             [sessionId]: {
               ...panel,
-              activeView: shouldDefaultToAllFiles ? 'all' : panel.activeView,
+              activeView: nextActiveView,
             },
           },
           statusBySession: {

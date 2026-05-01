@@ -7,6 +7,8 @@
  *   GET    /api/sessions            — 列出会话
  *   GET    /api/sessions/:id        — 获取会话详情
  *   GET    /api/sessions/:id/messages — 获取会话消息
+ *   GET    /api/sessions/:id/turn-checkpoints — 获取按轮次保留的 checkpoint 预览
+ *   GET    /api/sessions/:id/turn-checkpoints/diff — 获取绑定到指定 checkpoint 的 diff
  *   POST   /api/sessions            — 创建新会话
  *   DELETE /api/sessions/:id        — 删除会话
  *   PATCH  /api/sessions/:id        — 重命名会话
@@ -21,6 +23,8 @@ import { getSkillDirCommands } from '../../skills/loadSkillsDir.js'
 import { WorkspaceService } from '../services/workspaceService.js'
 import {
   executeSessionRewind,
+  getSessionTurnCheckpointDiff,
+  listSessionTurnCheckpoints,
   previewSessionRewind,
   type RewindTargetSelector,
 } from '../services/sessionRewindService.js'
@@ -93,6 +97,18 @@ export async function handleSessionsApi(
         )
       }
       return await rewindSession(req, sessionId)
+    }
+
+    if (subResource === 'turn-checkpoints') {
+      if (req.method !== 'GET') {
+        return Response.json(
+          { error: 'METHOD_NOT_ALLOWED', message: `Method ${req.method} not allowed` },
+          { status: 405 }
+        )
+      }
+      return segments[4] === 'diff'
+        ? await getTurnCheckpointDiff(sessionId, url)
+        : await getTurnCheckpoints(sessionId)
     }
 
     if (subResource === 'slash-commands') {
@@ -529,6 +545,41 @@ async function rewindSession(req: Request, sessionId: string): Promise<Response>
   const result = body.dryRun
     ? await previewSessionRewind(sessionId, body)
     : await executeSessionRewind(sessionId, body)
+
+  return Response.json(result)
+}
+
+async function getTurnCheckpoints(sessionId: string): Promise<Response> {
+  const checkpoints = await listSessionTurnCheckpoints(sessionId)
+  return Response.json({ checkpoints })
+}
+
+async function getTurnCheckpointDiff(sessionId: string, url: URL): Promise<Response> {
+  const targetUserMessageId = url.searchParams.get('targetUserMessageId') || undefined
+  const userMessageIndexParam = url.searchParams.get('userMessageIndex')
+  const path = url.searchParams.get('path')
+  const userMessageIndex =
+    userMessageIndexParam === null ? undefined : Number.parseInt(userMessageIndexParam, 10)
+
+  if (
+    (typeof targetUserMessageId !== 'string' || targetUserMessageId.length === 0) &&
+    !Number.isInteger(userMessageIndex)
+  ) {
+    throw ApiError.badRequest('targetUserMessageId (string) or userMessageIndex (integer) is required')
+  }
+
+  if (!path) {
+    throw ApiError.badRequest('path query parameter is required for turn checkpoint diff')
+  }
+
+  const result = await getSessionTurnCheckpointDiff(
+    sessionId,
+    {
+      targetUserMessageId,
+      userMessageIndex,
+    },
+    path,
+  )
 
   return Response.json(result)
 }

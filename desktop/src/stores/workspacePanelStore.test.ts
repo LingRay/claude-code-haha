@@ -162,6 +162,65 @@ describe('workspacePanelStore', () => {
     expect(useWorkspacePanelStore.getState().getActiveView('session-has-changes')).toBe('changed')
   })
 
+  it('returns to changed-files when a refreshed default all-files view now has changes', async () => {
+    mocks.getWorkspaceStatusMock
+      .mockResolvedValueOnce({
+        state: 'ok',
+        workDir: '/repo',
+        repoName: 'repo',
+        branch: 'main',
+        isGitRepo: true,
+        changedFiles: [],
+      })
+      .mockResolvedValueOnce({
+        state: 'ok',
+        workDir: '/repo',
+        repoName: 'repo',
+        branch: 'main',
+        isGitRepo: true,
+        changedFiles: [
+          {
+            path: 'src/app.ts',
+            status: 'modified',
+            additions: 2,
+            deletions: 1,
+          },
+        ],
+      })
+
+    useWorkspacePanelStore.getState().openPanel('session-refresh-changes')
+    await useWorkspacePanelStore.getState().loadStatus('session-refresh-changes')
+    expect(useWorkspacePanelStore.getState().getActiveView('session-refresh-changes')).toBe('all')
+
+    await useWorkspacePanelStore.getState().loadStatus('session-refresh-changes')
+
+    expect(useWorkspacePanelStore.getState().getActiveView('session-refresh-changes')).toBe('changed')
+  })
+
+  it('does not override an explicit all-files selection when refreshed status has changes', async () => {
+    mocks.getWorkspaceStatusMock.mockResolvedValue({
+      state: 'ok',
+      workDir: '/repo',
+      repoName: 'repo',
+      branch: 'main',
+      isGitRepo: true,
+      changedFiles: [
+        {
+          path: 'src/app.ts',
+          status: 'modified',
+          additions: 2,
+          deletions: 1,
+        },
+      ],
+    })
+
+    useWorkspacePanelStore.getState().openPanel('session-explicit-all')
+    useWorkspacePanelStore.getState().setActiveView('session-explicit-all', 'all')
+    await useWorkspacePanelStore.getState().loadStatus('session-explicit-all')
+
+    expect(useWorkspacePanelStore.getState().getActiveView('session-explicit-all')).toBe('all')
+  })
+
   it('does not override an explicit changed-files selection when status is empty', async () => {
     mocks.getWorkspaceStatusMock.mockResolvedValue({
       state: 'ok',
