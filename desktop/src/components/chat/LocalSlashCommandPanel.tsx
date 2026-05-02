@@ -120,19 +120,6 @@ function ErrorState({ message }: { message: string }) {
   )
 }
 
-const inspector = {
-  bg: '#fbfaf6',
-  panel: '#f6f4ee',
-  line: '#d8b3a8',
-  rust: '#8f3217',
-  ink: '#1f1713',
-  muted: '#7b665f',
-  green: '#25451b',
-  greenBg: '#d8f2b6',
-  red: '#c51616',
-  redBg: '#ffd9d3',
-}
-
 function formatNumber(value: number | undefined) {
   return new Intl.NumberFormat().format(value ?? 0)
 }
@@ -179,7 +166,7 @@ function assertSessionInspectionResponse(value: unknown, t: Translate): SessionI
 function InspectorSectionTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="mb-3 flex items-center justify-between gap-4">
-      <div className="font-mono text-[12px] font-semibold uppercase tracking-[0.24em] text-[#2b1b15]">{children}</div>
+      <div className="font-mono text-[12px] font-semibold uppercase tracking-[0.24em] text-[var(--color-inspector-heading)]">{children}</div>
       {action}
     </div>
   )
@@ -187,18 +174,18 @@ function InspectorSectionTitle({ children, action }: { children: React.ReactNode
 
 function MetricCard({ label, value, detail }: { label: string; value: React.ReactNode; detail?: React.ReactNode }) {
   return (
-    <div className="min-h-[82px] rounded-md border border-[#d8b3a8] bg-[#f4f2ed] px-4 py-4 font-mono">
-      <div className="text-[12px] uppercase tracking-[0.2em] text-[#2b1b15]">{label}</div>
-      <div className="mt-3 whitespace-pre-line text-[15px] leading-6 text-[#1f1713]">{value}</div>
-      {detail && <div className="mt-1 text-[13px] leading-5 text-[#7b665f]">{detail}</div>}
+    <div className="min-h-[82px] rounded-md border border-[var(--color-inspector-border)] bg-[var(--color-inspector-panel)] px-4 py-4 font-mono">
+      <div className="text-[12px] uppercase tracking-[0.2em] text-[var(--color-inspector-heading)]">{label}</div>
+      <div className="mt-3 whitespace-pre-line text-[15px] leading-6 text-[var(--color-inspector-text)]">{value}</div>
+      {detail && <div className="mt-1 text-[13px] leading-5 text-[var(--color-inspector-muted)]">{detail}</div>}
     </div>
   )
 }
 
 function InspectorNotice({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3 rounded-md border border-[#d8b3a8] bg-[#fbfaf6] px-4 py-3 text-[14px] text-[#2b1b15]">
-      <span className="material-symbols-outlined text-[18px] text-[#7b665f]">info</span>
+    <div className="flex items-center gap-3 rounded-md border border-[var(--color-inspector-border)] bg-[var(--color-inspector-surface)] px-4 py-3 text-[14px] text-[var(--color-inspector-heading)]">
+      <span className="material-symbols-outlined text-[18px] text-[var(--color-inspector-muted)]">info</span>
       <span>{children}</span>
     </div>
   )
@@ -206,13 +193,13 @@ function InspectorNotice({ children }: { children: React.ReactNode }) {
 
 function KeyValueRows({ rows }: { rows: Array<[string, React.ReactNode]> }) {
   return (
-    <div className="overflow-hidden rounded-md border border-[#d8b3a8] bg-[#fbfaf6] font-mono">
+    <div className="overflow-hidden rounded-md border border-[var(--color-inspector-border)] bg-[var(--color-inspector-surface)] font-mono">
       {rows.map(([label, value]) => (
-        <div key={label} className="grid grid-cols-[220px_minmax(0,1fr)] border-t border-[#d8b3a8] first:border-t-0">
-          <div className="border-r border-[#d8b3a8] bg-[#f4f2ed] px-4 py-3 text-[12px] font-semibold uppercase tracking-[0.24em] text-[#2b1b15]">
+        <div key={label} className="grid grid-cols-[220px_minmax(0,1fr)] border-t border-[var(--color-inspector-border)] first:border-t-0">
+          <div className="border-r border-[var(--color-inspector-border)] bg-[var(--color-inspector-panel)] px-4 py-3 text-[12px] font-semibold uppercase tracking-[0.24em] text-[var(--color-inspector-heading)]">
             {label}
           </div>
-          <div className="min-w-0 break-words px-4 py-3 text-[14px] text-[#1f1713]">{value}</div>
+          <div className="min-w-0 break-words px-4 py-3 text-[14px] text-[var(--color-inspector-text)]">{value}</div>
         </div>
       ))}
     </div>
@@ -278,7 +265,7 @@ function UsageTab({
         </InspectorNotice>
       )}
       {usage.source === 'transcript' && (
-        <div className="rounded-md border border-[#d8b3a8] bg-[#fbfaf6] px-4 py-3 text-sm text-[#5f514c]">
+        <div className="rounded-md border border-[var(--color-inspector-border)] bg-[var(--color-inspector-surface)] px-4 py-3 text-sm text-[var(--color-inspector-muted-strong)]">
           {t('slash.inspector.usage.transcriptNotice')}
         </div>
       )}
@@ -302,30 +289,30 @@ function UsageTab({
         <MetricCard label={t('slash.inspector.usage.webSearch')} value={formatNumber(usage.totalWebSearchRequests)} />
       </div>
       <section>
-        <div className="mb-3 text-[22px] font-semibold text-[#1f1713]">{t('slash.inspector.usage.byModel')}</div>
+        <div className="mb-3 text-[22px] font-semibold text-[var(--color-inspector-text)]">{t('slash.inspector.usage.byModel')}</div>
         {models.length === 0 ? (
           <EmptyState title={t('slash.inspector.usage.noModelTitle')} body={t('slash.inspector.usage.noModelBody')} />
         ) : (
-          <div className="overflow-hidden rounded-md border border-[#d8b3a8] bg-[#fbfaf6] font-mono">
+          <div className="overflow-hidden rounded-md border border-[var(--color-inspector-border)] bg-[var(--color-inspector-surface)] font-mono">
             {models.map((model) => (
-              <div key={model.model} className="border-t border-[#d8b3a8] first:border-t-0">
-                <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4 border-b border-[#d8b3a8] px-4 py-3">
-                  <div className="min-w-0 truncate text-[13px] font-semibold text-[#1f1713]">{model.displayName || model.model}</div>
-                  <div className="text-right text-[12px] font-semibold uppercase tracking-[0.18em] text-[#2b1b15]">{t('slash.inspector.usage.tokens')}</div>
+              <div key={model.model} className="border-t border-[var(--color-inspector-border)] first:border-t-0">
+                <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4 border-b border-[var(--color-inspector-border)] px-4 py-3">
+                  <div className="min-w-0 truncate text-[13px] font-semibold text-[var(--color-inspector-text)]">{model.displayName || model.model}</div>
+                  <div className="text-right text-[12px] font-semibold uppercase tracking-[0.18em] text-[var(--color-inspector-heading)]">{t('slash.inspector.usage.tokens')}</div>
                 </div>
-                <div className="grid grid-cols-[160px_minmax(0,1fr)_120px] items-center gap-4 border-b border-[#d8b3a8] px-4 py-3 last:border-b-0">
-                  <div className="text-[12px] uppercase tracking-[0.18em] text-[#2b1b15]">{t('slash.inspector.usage.input')}</div>
-                  <div className="h-1 overflow-hidden rounded-full bg-[#ebe7df]">
-                    <div className="h-full rounded-full bg-[#8f3217]" style={{ width: '95%' }} />
+                <div className="grid grid-cols-[160px_minmax(0,1fr)_120px] items-center gap-4 border-b border-[var(--color-inspector-border)] px-4 py-3 last:border-b-0">
+                  <div className="text-[12px] uppercase tracking-[0.18em] text-[var(--color-inspector-heading)]">{t('slash.inspector.usage.input')}</div>
+                  <div className="h-1 overflow-hidden rounded-full bg-[var(--color-inspector-chip)]">
+                    <div className="h-full rounded-full bg-[var(--color-inspector-accent)]" style={{ width: '95%' }} />
                   </div>
-                  <div className="text-right text-[13px] text-[#1f1713]">{formatNumber(model.inputTokens)}</div>
+                  <div className="text-right text-[13px] text-[var(--color-inspector-text)]">{formatNumber(model.inputTokens)}</div>
                 </div>
                 <div className="grid grid-cols-[160px_minmax(0,1fr)_120px] items-center gap-4 px-4 py-3">
-                  <div className="text-[12px] uppercase tracking-[0.18em] text-[#2b1b15]">{t('slash.inspector.usage.output')}</div>
-                  <div className="h-1 overflow-hidden rounded-full bg-[#ebe7df]">
-                    <div className="h-full rounded-full bg-[#0f5c8f]" style={{ width: `${Math.max(4, Math.min(100, (model.outputTokens / Math.max(1, model.inputTokens)) * 100))}%` }} />
+                  <div className="text-[12px] uppercase tracking-[0.18em] text-[var(--color-inspector-heading)]">{t('slash.inspector.usage.output')}</div>
+                  <div className="h-1 overflow-hidden rounded-full bg-[var(--color-inspector-chip)]">
+                    <div className="h-full rounded-full bg-[var(--color-inspector-accent-secondary)]" style={{ width: `${Math.max(4, Math.min(100, (model.outputTokens / Math.max(1, model.inputTokens)) * 100))}%` }} />
                   </div>
-                  <div className="text-right text-[13px] text-[#1f1713]">{formatNumber(model.outputTokens)}</div>
+                  <div className="text-right text-[13px] text-[var(--color-inspector-text)]">{formatNumber(model.outputTokens)}</div>
                 </div>
               </div>
             ))}
@@ -348,7 +335,7 @@ function ContextStackedBar({ categories, rawMaxTokens }: { categories: ContextCa
   if (activeCategories.length === 0) return null
 
   return (
-    <div className="overflow-hidden rounded-full bg-[#ebe7df]">
+    <div className="overflow-hidden rounded-full bg-[var(--color-inspector-chip)]">
       <div className="flex h-2.5 w-full">
         {activeCategories.map((category) => (
           <div
@@ -372,7 +359,7 @@ function CategoryBreakdown({ categories, rawMaxTokens, t }: { categories: Contex
   }
 
   return (
-    <div className="rounded-md border border-[#d8b3a8] bg-[#f4f2ed] px-5 py-5 font-mono">
+    <div className="rounded-md border border-[var(--color-inspector-border)] bg-[var(--color-inspector-panel)] px-5 py-5 font-mono">
       <InspectorSectionTitle>{t('slash.inspector.context.categoryTitle')}</InspectorSectionTitle>
       <div className="grid gap-x-10 gap-y-5 sm:grid-cols-2">
         {visibleCategories.map((category) => {
@@ -385,21 +372,21 @@ function CategoryBreakdown({ categories, rawMaxTokens, t }: { categories: Contex
             >
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className={`min-w-0 truncate text-[14px] font-semibold ${muted ? 'text-[#5f514c]' : 'text-[#1f1713]'}`}>
+                  <span className={`min-w-0 truncate text-[14px] font-semibold ${muted ? 'text-[var(--color-inspector-muted-strong)]' : 'text-[var(--color-inspector-text)]'}`}>
                     {category.name}
                   </span>
                 </div>
                 <div className="shrink-0 text-right leading-tight">
-                  <div className="text-sm text-[#1f1713]">{formatNumber(category.tokens)}</div>
-                  <div className="mt-0.5 text-[12px] text-[#7b665f]">{formatPercent(percent)}</div>
+                  <div className="text-sm text-[var(--color-inspector-text)]">{formatNumber(category.tokens)}</div>
+                  <div className="mt-0.5 text-[12px] text-[var(--color-inspector-muted)]">{formatPercent(percent)}</div>
                 </div>
               </div>
-              <div className="mt-2 h-1 overflow-hidden rounded-full bg-[#ebe7df]">
+              <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--color-inspector-chip)]">
                 <div
                   className={muted ? 'h-full rounded-full opacity-65' : 'h-full rounded-full'}
                   style={{
                     width: `${Math.min(100, Math.max(0.5, percent))}%`,
-                    backgroundColor: muted ? '#9b928c' : '#8f3217',
+                    backgroundColor: muted ? 'var(--color-inspector-capacity)' : 'var(--color-inspector-accent)',
                   }}
                 />
               </div>
@@ -414,9 +401,9 @@ function CategoryBreakdown({ categories, rawMaxTokens, t }: { categories: Contex
 function ContextStatPill({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
     <div className="min-w-0 font-mono">
-      <div className="truncate text-[12px] font-semibold uppercase tracking-[0.22em] text-[#7b665f]">{label}</div>
-      <div className="mt-2 truncate text-[16px] font-semibold text-[#1f1713]">{value}</div>
-      {detail && <div className="mt-1 truncate text-[13px] text-[#7b665f]">{detail}</div>}
+      <div className="truncate text-[12px] font-semibold uppercase tracking-[0.22em] text-[var(--color-inspector-muted)]">{label}</div>
+      <div className="mt-2 truncate text-[16px] font-semibold text-[var(--color-inspector-text)]">{value}</div>
+      {detail && <div className="mt-1 truncate text-[13px] text-[var(--color-inspector-muted)]">{detail}</div>}
     </div>
   )
 }
@@ -433,11 +420,11 @@ function InspectorStatusBadge({ status, t }: { status: string; t: Translate }) {
   const isConnected = normalized === 'connected'
   const isFailed = normalized === 'failed'
   const badgeClass = isConnected
-    ? 'bg-[#d8f2b6] text-[#25451b]'
+    ? 'bg-[var(--color-inspector-success-bg)] text-[var(--color-inspector-success)]'
     : isFailed
-      ? 'bg-[#ffd9d3] text-[#c51616]'
-      : 'bg-[#ebe7df] text-[#5f514c]'
-  const dotClass = isConnected ? 'bg-[#25451b]' : isFailed ? 'bg-[#c51616]' : 'bg-[#7b665f]'
+      ? 'bg-[var(--color-inspector-danger-bg)] text-[var(--color-inspector-danger)]'
+      : 'bg-[var(--color-inspector-chip)] text-[var(--color-inspector-muted-strong)]'
+  const dotClass = isConnected ? 'bg-[var(--color-inspector-success)]' : isFailed ? 'bg-[var(--color-inspector-danger)]' : 'bg-[var(--color-inspector-muted)]'
 
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] ${badgeClass}`}>
@@ -451,7 +438,7 @@ function McpServerIcon({ status }: { status: string }) {
   const isFailed = status === 'failed'
   const icon = isFailed ? 'power_off' : 'dns'
   return (
-    <span className={`material-symbols-outlined text-[20px] ${isFailed ? 'text-[#c51616]' : 'text-[#25451b]'}`}>
+    <span className={`material-symbols-outlined text-[20px] ${isFailed ? 'text-[var(--color-inspector-danger)]' : 'text-[var(--color-inspector-success)]'}`}>
       {icon}
     </span>
   )
@@ -462,31 +449,31 @@ function ContextOverview({ context, categories, t }: { context: SessionContextSn
   const freeTokens = Math.max(0, context.rawMaxTokens - context.totalTokens)
   const freePercent = context.rawMaxTokens > 0 ? (freeTokens / context.rawMaxTokens) * 100 : 0
   return (
-    <div className="rounded-md border border-[#d8b3a8] bg-[#f4f2ed] px-5 py-6">
+    <div className="rounded-md border border-[var(--color-inspector-border)] bg-[var(--color-inspector-panel)] px-5 py-6">
       <div className="mb-8 flex items-start justify-between gap-4">
         <InspectorSectionTitle>{t('slash.inspector.context.windowUsage')}</InspectorSectionTitle>
-        <span className="rounded-sm border border-[#d8b3a8] bg-[#ebe7df] px-2 py-1 font-mono text-xs text-[#5f514c]">{context.model}</span>
+        <span className="rounded-sm border border-[var(--color-inspector-border)] bg-[var(--color-inspector-chip)] px-2 py-1 font-mono text-xs text-[var(--color-inspector-muted-strong)]">{context.model}</span>
       </div>
-      <div className="font-mono text-[24px] font-semibold text-[#1f1713]">
+      <div className="font-mono text-[24px] font-semibold text-[var(--color-inspector-text)]">
         {formatNumber(context.totalTokens)}
-        <span className="mx-1.5 text-[#1f1713]">/</span>
+        <span className="mx-1.5 text-[var(--color-inspector-text)]">/</span>
         <span>{formatNumber(context.rawMaxTokens)}</span>
-        <span className="ml-3 align-middle text-sm font-normal text-[#0f5c8f]">[{formatPercent(usedPercent)} {t('slash.inspector.context.used')}]</span>
+        <span className="ml-3 align-middle text-sm font-normal text-[var(--color-inspector-accent-secondary)]">[{formatPercent(usedPercent)} {t('slash.inspector.context.used')}]</span>
       </div>
       <div className="mt-7">
         <ContextStackedBar categories={categories} rawMaxTokens={context.rawMaxTokens} />
       </div>
       <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-md border border-[#d8b3a8] bg-[#fbfaf6] px-4 py-3">
+        <div className="rounded-md border border-[var(--color-inspector-border)] bg-[var(--color-inspector-surface)] px-4 py-3">
           <ContextStatPill label={t('slash.inspector.context.free')} value={formatNumber(freeTokens)} detail={formatPercent(freePercent)} />
         </div>
-        <div className="rounded-md border border-[#d8b3a8] bg-[#fbfaf6] px-4 py-3">
+        <div className="rounded-md border border-[var(--color-inspector-border)] bg-[var(--color-inspector-surface)] px-4 py-3">
           <ContextStatPill label={t('slash.inspector.context.messages')} value={formatNumber(context.messageBreakdown?.assistantMessageTokens ?? 0)} detail={t('slash.inspector.context.assistant')} />
         </div>
-        <div className="rounded-md border border-[#d8b3a8] bg-[#fbfaf6] px-4 py-3">
+        <div className="rounded-md border border-[var(--color-inspector-border)] bg-[var(--color-inspector-surface)] px-4 py-3">
           <ContextStatPill label={t('slash.inspector.context.toolResults')} value={formatNumber(context.messageBreakdown?.toolResultTokens ?? 0)} />
         </div>
-        <div className="rounded-md border border-[#d8b3a8] bg-[#fbfaf6] px-4 py-3">
+        <div className="rounded-md border border-[var(--color-inspector-border)] bg-[var(--color-inspector-surface)] px-4 py-3">
           <ContextStatPill label={t('slash.inspector.context.context')} value={formatPercent(usedPercent)} />
         </div>
       </div>
@@ -544,7 +531,7 @@ function StatusTab({
           label={t('slash.inspector.status.cliStatus')}
           value={(
             <span className="inline-flex items-center gap-2">
-              <span className={`h-2 w-2 rounded-full ${data.active ? 'bg-[#25451b]' : 'bg-[#c51616]'}`} />
+              <span className={`h-2 w-2 rounded-full ${data.active ? 'bg-[var(--color-inspector-success)]' : 'bg-[var(--color-inspector-danger)]'}`} />
               {data.active ? t('slash.inspector.status.running') : t('slash.inspector.status.notRunning')}
             </span>
           )}
@@ -554,16 +541,16 @@ function StatusTab({
           label={t('slash.inspector.status.mcpConnections')}
           value={(
             <span>
-              <span className="text-[#25451b]">{formatNumber(connectedMcp)}</span>
-              <span className="mx-5 text-[#1f1713]">/</span>
-              <span className="text-[#c51616]">{formatNumber(failedMcp)}</span>
+              <span className="text-[var(--color-inspector-success)]">{formatNumber(connectedMcp)}</span>
+              <span className="mx-5 text-[var(--color-inspector-text)]">/</span>
+              <span className="text-[var(--color-inspector-danger)]">{formatNumber(failedMcp)}</span>
             </span>
           )}
           detail={(
             <span>
-              <span className="text-[#25451b]">{t('slash.inspector.status.connected')}</span>
-              <span className="mx-5 text-[#1f1713]" />
-              <span className="text-[#c51616]">{t('slash.inspector.status.failed')}</span>
+              <span className="text-[var(--color-inspector-success)]">{t('slash.inspector.status.connected')}</span>
+              <span className="mx-5 text-[var(--color-inspector-text)]" />
+              <span className="text-[var(--color-inspector-danger)]">{t('slash.inspector.status.failed')}</span>
             </span>
           )}
         />
@@ -576,7 +563,7 @@ function StatusTab({
             [t('slash.inspector.status.version'), data.status.version ?? t('slash.inspector.status.unknown')],
             [t('slash.inspector.status.sessionId'), <span className="font-mono text-[13px]">{data.status.sessionId}</span>],
             [t('slash.inspector.status.workingDirectory'), <span className="font-mono text-[13px]">{data.status.cwd ?? data.status.workDir}</span>],
-            [t('slash.inspector.status.permissionMode'), <span className="rounded-sm bg-[#ebe7df] px-1.5 py-1">{data.status.permissionMode}</span>],
+            [t('slash.inspector.status.permissionMode'), <span className="rounded-sm bg-[var(--color-inspector-chip)] px-1.5 py-1">{data.status.permissionMode}</span>],
             [t('slash.inspector.status.authToken'), data.status.apiKeySource ?? t('slash.inspector.status.unknown')],
             [t('slash.inspector.status.outputStyle'), data.status.outputStyle ?? t('slash.inspector.status.default')],
           ]}
@@ -585,7 +572,7 @@ function StatusTab({
       {mcpServers.length > 0 && (
         <section>
           <InspectorSectionTitle
-            action={<button type="button" className="font-mono text-[12px] tracking-[0.18em] text-[#8f3217] hover:text-[#5b1e0d]">↻ {t('slash.inspector.status.refresh')}</button>}
+            action={<button type="button" className="font-mono text-[12px] tracking-[0.18em] text-[var(--color-inspector-accent)] hover:text-[var(--color-inspector-accent-hover)]">↻ {t('slash.inspector.status.refresh')}</button>}
           >
             {t('slash.inspector.status.mcpServers')}
           </InspectorSectionTitle>
@@ -594,12 +581,12 @@ function StatusTab({
               <div
                 key={`${server.name}:${server.status}`}
                 className={`flex min-h-[48px] items-center justify-between gap-4 rounded-md border px-4 py-3 font-mono ${
-                  server.status === 'failed' ? 'border-[#f1b8b0] bg-[#fff7f5]' : 'border-[#d8b3a8] bg-[#f4f2ed]'
+                  server.status === 'failed' ? 'border-[var(--color-inspector-danger-border)] bg-[var(--color-inspector-danger-surface)]' : 'border-[var(--color-inspector-border)] bg-[var(--color-inspector-panel)]'
                 }`}
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <McpServerIcon status={server.status} />
-                  <span className="min-w-0 truncate text-[14px] text-[#1f1713]">{server.name}</span>
+                  <span className="min-w-0 truncate text-[14px] text-[var(--color-inspector-text)]">{server.name}</span>
                 </div>
                 <InspectorStatusBadge status={server.status} t={t} />
               </div>
@@ -628,11 +615,10 @@ function SessionInspectorShell({
 }) {
   return (
     <div
-      className="absolute bottom-full left-0 right-0 z-50 mb-4 overflow-hidden rounded-[10px] border bg-[#fbfaf6] shadow-[0_28px_80px_rgba(65,54,48,0.22)]"
-      style={{ borderColor: inspector.line, color: inspector.ink }}
+      className="absolute bottom-full left-0 right-0 z-50 mb-4 overflow-hidden rounded-[10px] border border-[var(--color-inspector-border)] bg-[var(--color-inspector-surface)] text-[var(--color-inspector-text)] shadow-[var(--shadow-inspector)]"
     >
-      <div className="grid min-h-[64px] grid-cols-[1fr_auto_1fr] items-center border-b border-[#d8b3a8] bg-[#fbfaf6] px-6">
-        <div className="font-mono text-[16px] font-semibold uppercase text-[#8f3217]">{t('slash.inspector.title')}</div>
+      <div className="grid min-h-[64px] grid-cols-[1fr_auto_1fr] items-center border-b border-[var(--color-inspector-border)] bg-[var(--color-inspector-surface)] px-6">
+        <div className="font-mono text-[16px] font-semibold uppercase text-[var(--color-inspector-accent)]">{t('slash.inspector.title')}</div>
         <div className="flex items-center gap-8">
           {tabs.map((tab) => (
             <button
@@ -640,11 +626,11 @@ function SessionInspectorShell({
               type="button"
               onClick={() => onSelectTab(tab.id)}
               className={`relative h-10 px-0 font-sans text-sm transition-colors ${
-                selectedTab === tab.id ? 'text-[#8f3217]' : 'text-[#5f514c] hover:text-[#8f3217]'
+                selectedTab === tab.id ? 'text-[var(--color-inspector-accent)]' : 'text-[var(--color-inspector-muted-strong)] hover:text-[var(--color-inspector-accent)]'
               }`}
             >
               {tab.label}
-              {selectedTab === tab.id && <span className="absolute bottom-1 left-0 right-0 h-[2px] bg-[#8f3217]" />}
+              {selectedTab === tab.id && <span className="absolute bottom-1 left-0 right-0 h-[2px] bg-[var(--color-inspector-accent)]" />}
             </button>
           ))}
         </div>
@@ -653,13 +639,13 @@ function SessionInspectorShell({
             type="button"
             onClick={onClose}
             aria-label={t('slash.inspector.close')}
-            className="flex h-10 w-10 items-center justify-center text-[#8f3217] transition-colors hover:text-[#5b1e0d]"
+            className="flex h-10 w-10 items-center justify-center text-[var(--color-inspector-accent)] transition-colors hover:text-[var(--color-inspector-accent-hover)]"
           >
             <span className="material-symbols-outlined text-[24px]">close</span>
           </button>
         </div>
       </div>
-      <div className="max-h-[min(540px,58vh)] overflow-y-auto bg-[#fbfaf6] px-6 py-6">{children}</div>
+      <div className="max-h-[min(540px,58vh)] overflow-y-auto bg-[var(--color-inspector-surface)] px-6 py-6">{children}</div>
     </div>
   )
 }

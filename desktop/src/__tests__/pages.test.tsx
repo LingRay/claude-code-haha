@@ -4,6 +4,7 @@ import '@testing-library/jest-dom'
 
 import { skillsApi } from '../api/skills'
 import { mcpApi } from '../api/mcp'
+import { sessionsApi } from '../api/sessions'
 import { useUIStore } from '../stores/uiStore'
 
 vi.mock('../api/skills', () => ({
@@ -34,6 +35,35 @@ vi.mock('../api/mcp', () => ({
     })),
   },
 }))
+
+vi.mock('../api/sessions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/sessions')>()
+  return {
+    ...actual,
+    sessionsApi: {
+      ...actual.sessionsApi,
+      getInspection: vi.fn(async () => ({
+        active: true,
+        status: {
+          sessionId: 'status-panel-session',
+          workDir: '/workspace/project',
+          cwd: '/workspace/project',
+          permissionMode: 'bypassPermissions',
+          model: 'kimi-k2.6',
+          version: '999.0.0-local',
+          apiKeySource: 'ANTHROPIC_API_KEY',
+          outputStyle: 'default',
+          mcpServers: [
+            { name: 'deepwiki', status: 'connected' },
+            { name: 'chatLog', status: 'failed' },
+          ],
+          tools: [{ name: 'Read' }, { name: 'Bash' }],
+          slashCommandCount: 3,
+        },
+      })),
+    },
+  }
+})
 
 // Import all pages
 import { EmptySession } from '../pages/EmptySession'
@@ -504,6 +534,67 @@ describe('Content-only pages render without errors', () => {
     expect(screen.getByText('/clear')).toBeInTheDocument()
     expect(screen.getByText('/cost')).toBeInTheDocument()
     expect(screen.getByText('13 more commands available. Type / to search the full command list.')).toBeInTheDocument()
+
+    useTabStore.setState({ tabs: [], activeTabId: null })
+    useSessionStore.setState({ sessions: [], activeSessionId: null, isLoading: false, error: null })
+    useChatStore.setState({ sessions: {} })
+  })
+
+  it('ActiveSession /status inspector uses theme tokens instead of fixed light colors', async () => {
+    const SESSION_ID = 'status-panel-session'
+    const sendMessage = vi.fn()
+    useTabStore.setState({ tabs: [{ sessionId: SESSION_ID, title: 'Test', type: 'session' as const, status: 'idle' }], activeTabId: SESSION_ID })
+    useSessionStore.setState({
+      sessions: [{
+        id: SESSION_ID,
+        title: 'Test',
+        createdAt: '2026-04-10T00:00:00.000Z',
+        modifiedAt: '2026-04-10T00:00:00.000Z',
+        messageCount: 0,
+        projectPath: '/workspace/project',
+        workDir: '/workspace/project',
+        workDirExists: true,
+      }],
+      activeSessionId: SESSION_ID,
+      isLoading: false,
+      error: null,
+    })
+    useChatStore.setState({
+      sessions: {
+        [SESSION_ID]: {
+          messages: [],
+          chatState: 'idle',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: null,
+          pendingComputerUsePermission: null,
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          agentTaskNotifications: {},
+          elapsedTimer: null,
+        },
+      },
+      sendMessage,
+    })
+
+    const { container } = render(<ActiveSession />)
+    const textarea = screen.getByRole('textbox')
+    fireEvent.change(textarea, { target: { value: '/status', selectionStart: 7 } })
+    fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter' })
+
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect(await screen.findByText('Session inspector')).toBeInTheDocument()
+    expect(vi.mocked(sessionsApi.getInspection)).toHaveBeenCalledWith(SESSION_ID, { includeContext: false })
+    expect(container.innerHTML).toContain('bg-[var(--color-inspector-surface)]')
+    expect(container.innerHTML).not.toContain('bg-[#fbfaf6]')
+    expect(container.innerHTML).not.toContain('bg-[#f4f2ed]')
+    expect(container.innerHTML).not.toContain('border-[#d8b3a8]')
 
     useTabStore.setState({ tabs: [], activeTabId: null })
     useSessionStore.setState({ sessions: [], activeSessionId: null, isLoading: false, error: null })
