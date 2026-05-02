@@ -1557,17 +1557,28 @@ async function* queryModel(
         : []
     const extraBodyParams = getExtraBodyParams(bedrockBetas)
 
+    const hasThinking =
+      thinkingConfig.type !== 'disabled' &&
+      !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_THINKING)
+    const modelCanThink = modelSupportsThinking(options.model)
+    const sendsExplicitDisabledThinking =
+      !(hasThinking && modelCanThink) && shouldSendExplicitDisabledThinking()
+
     const outputConfig: BetaOutputConfig = {
       ...((extraBodyParams.output_config as BetaOutputConfig) ?? {}),
     }
 
-    configureEffortParams(
-      effort,
-      outputConfig,
-      extraBodyParams,
-      betasParams,
-      options.model,
-    )
+    if (sendsExplicitDisabledThinking) {
+      delete outputConfig.effort
+    } else {
+      configureEffortParams(
+        effort,
+        outputConfig,
+        extraBodyParams,
+        betasParams,
+        options.model,
+      )
+    }
 
     configureTaskBudgetParams(
       options.taskBudget,
@@ -1594,15 +1605,12 @@ async function* queryModel(
       options.maxOutputTokensOverride ||
       getMaxOutputTokensForModel(options.model)
 
-    const hasThinking =
-      thinkingConfig.type !== 'disabled' &&
-      !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_THINKING)
     let thinking: BetaMessageStreamParams['thinking'] | undefined = undefined
 
     // IMPORTANT: Do not change the adaptive-vs-budget thinking selection below
     // without notifying the model launch DRI and research. This is a sensitive
     // setting that can greatly affect model quality and bashing.
-    if (hasThinking && modelSupportsThinking(options.model)) {
+    if (hasThinking && modelCanThink) {
       if (
         !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING) &&
         modelSupportsAdaptiveThinking(options.model)
@@ -1628,7 +1636,7 @@ async function* queryModel(
           type: 'enabled',
         } satisfies BetaMessageStreamParams['thinking']
       }
-    } else if (shouldSendExplicitDisabledThinking()) {
+    } else if (sendsExplicitDisabledThinking) {
       thinking = {
         type: 'disabled',
       } as unknown as BetaMessageStreamParams['thinking']
